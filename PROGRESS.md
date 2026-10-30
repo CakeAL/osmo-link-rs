@@ -42,3 +42,11 @@ Added a platform-independent GPS input type, explicit coordinate/velocity/accura
 unit conversion, and UTC+8 date rollover. Single fixes and latest-value 10Hz
 streaming share the camera worker. Old inputs expire after 2 seconds; sleep blocks
 GPS writes. A focused test checks units, midnight rollover, and invalid fixes.
+
+## Step 5
+
+Added the interactive CLI, piped input, camera selection, persistent controller
+identity and pairing history, protocol logging, controls, and timestamp-paced
+JSONL GPS playback. `wait` keeps reception and playback active in scripted checks.
+Per user clarification, GPS now defaults to 1Hz, configurable via
+`ConnectOptions::gps_interval` (100ms..1s); GNSS acquisition frequency is separate.

@@ -9,7 +9,7 @@ use tokio::{
 use crate::{CameraStatus, Device, Error, GpsSample, ModeInfo, Result, ble::Link, protocol::Frame};
 
 /// Application-owned identity, independent of the host's private Bluetooth MAC.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct ControllerIdentity {
     pub device_id: u32,
     pub address: [u8; 6],
@@ -33,6 +33,8 @@ pub struct ConnectOptions {
     pub identity: ControllerIdentity,
     pub first_pair: bool,
     pub verification_code: u16,
+    /// GPS transmission period. Default: one second; minimum: 100ms.
+    pub gps_interval: Duration,
 }
 
 impl ConnectOptions {
@@ -41,6 +43,7 @@ impl ConnectOptions {
             identity,
             first_pair: false,
             verification_code: (uuid::Uuid::new_v4().as_u128() % 10000) as u16,
+            gps_interval: Duration::from_secs(1),
         }
     }
 }
@@ -111,6 +114,11 @@ impl Camera {
         if options.verification_code > 9999 {
             return Err(Error::InvalidInput("verification code must be 0..9999"));
         }
+        if options.gps_interval < Duration::from_millis(100)
+            || options.gps_interval > Duration::from_secs(1)
+        {
+            return Err(Error::InvalidInput("GPS interval must be 100ms..1s"));
+        }
         let mut link = Link::open(device).await?;
         let result = timeout(Duration::from_secs(35), handshake(&mut link, &options))
             .await
@@ -126,7 +134,14 @@ impl Camera {
         let (events, _) = broadcast::channel(64);
         let (status_tx, status) = watch::channel(None);
         let (gps, gps_rx) = watch::channel(None);
-        tokio::spawn(run(link, receiver, events.clone(), status_tx, gps_rx));
+        tokio::spawn(run(
+            link,
+            receiver,
+            events.clone(),
+            status_tx,
+            gps_rx,
+            options.gps_interval,
+        ));
         Ok(Self {
             device_id,
             commands,
@@ -140,8 +155,8 @@ impl Camera {
         self.events.subscribe()
     }
 
-    /// Update the latest fix. The worker transmits at 10Hz, for at most 2 seconds
-    /// after the last update. This does not claim the positioning source is 10Hz.
+    /// Update the latest fix. The worker transmits at the configured period
+    /// (default 1Hz), for at most 2 seconds after the last input update.
     pub fn update_gps(&self, sample: &GpsSample) -> Result<()> {
         if self.commands.is_closed() {
             return Err(Error::Disconnected);
@@ -346,12 +361,13 @@ async fn run(
     events: broadcast::Sender<Event>,
     status: watch::Sender<Option<CameraStatus>>,
     gps: watch::Receiver<Option<GpsInput>>,
+    gps_interval: Duration,
 ) {
     let mut seq = 1u16;
     let mut pending = HashMap::<u16, Pending>::new();
     let mut tick = interval(Duration::from_millis(250));
     let mut sleeping = false;
-    let mut gps_tick = interval(Duration::from_millis(100));
+    let mut gps_tick = interval(gps_interval);
     gps_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let reason = loop {
         tokio::select! {
