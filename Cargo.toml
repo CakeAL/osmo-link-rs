@@ -1,6 +1,12 @@
-[package]
-name = "osmo-link-rs"
+[workspace]
+members = ["crates/osmo-core", "crates/macos-cli"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+osmo-core = { path = "crates/osmo-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+thiserror = "2"
