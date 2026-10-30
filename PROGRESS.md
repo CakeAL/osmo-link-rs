@@ -35,3 +35,10 @@ states, restart, sleep, and status subscription. Both 1D02 and 1D06 state messag
 are decoded; the latest state is available through a watch channel. A successful
 sleep acknowledgement blocks further writes. Command targets use the camera ID
 returned by authentication, rather than the demo's inconsistent hardcoded IDs.
+
+## Step 4
+
+Added a platform-independent GPS input type, explicit coordinate/velocity/accuracy
+unit conversion, and UTC+8 date rollover. Single fixes and latest-value 10Hz
+streaming share the camera worker. Old inputs expire after 2 seconds; sleep blocks
+GPS writes. A focused test checks units, midnight rollover, and invalid fixes.

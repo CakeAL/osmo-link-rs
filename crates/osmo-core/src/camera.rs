@@ -6,7 +6,7 @@ use tokio::{
     time::{Instant, interval, timeout},
 };
 
-use crate::{CameraStatus, Device, Error, ModeInfo, Result, ble::Link, protocol::Frame};
+use crate::{CameraStatus, Device, Error, GpsSample, ModeInfo, Result, ble::Link, protocol::Frame};
 
 /// Application-owned identity, independent of the host's private Bluetooth MAC.
 #[derive(Debug, Clone, Copy)]
@@ -92,11 +92,18 @@ struct Pending {
     reply: oneshot::Sender<Result<Frame>>,
 }
 
+#[derive(Clone)]
+struct GpsInput {
+    payload: Vec<u8>,
+    received_at: Instant,
+}
+
 pub struct Camera {
     pub device_id: u32,
     commands: mpsc::Sender<Request>,
     events: broadcast::Sender<Event>,
     status: watch::Receiver<Option<CameraStatus>>,
+    gps: watch::Sender<Option<GpsInput>>,
 }
 
 impl Camera {
@@ -118,17 +125,45 @@ impl Camera {
         let (commands, receiver) = mpsc::channel(8);
         let (events, _) = broadcast::channel(64);
         let (status_tx, status) = watch::channel(None);
-        tokio::spawn(run(link, receiver, events.clone(), status_tx));
+        let (gps, gps_rx) = watch::channel(None);
+        tokio::spawn(run(link, receiver, events.clone(), status_tx, gps_rx));
         Ok(Self {
             device_id,
             commands,
             events,
             status,
+            gps,
         })
     }
 
     pub fn events(&self) -> broadcast::Receiver<Event> {
         self.events.subscribe()
+    }
+
+    /// Update the latest fix. The worker transmits at 10Hz, for at most 2 seconds
+    /// after the last update. This does not claim the positioning source is 10Hz.
+    pub fn update_gps(&self, sample: &GpsSample) -> Result<()> {
+        if self.commands.is_closed() {
+            return Err(Error::Disconnected);
+        }
+        if self.status().is_some_and(|s| s.power_mode == 3) {
+            return Err(Error::Sleeping);
+        }
+        self.gps.send_replace(Some(GpsInput {
+            payload: sample.encode()?,
+            received_at: Instant::now(),
+        }));
+        Ok(())
+    }
+
+    pub fn stop_gps(&self) {
+        self.gps.send_replace(None);
+    }
+
+    /// Send one fix without enabling periodic transmission.
+    pub async fn send_gps(&self, sample: &GpsSample) -> Result<()> {
+        self.command([0, 0x17], sample.encode()?, false).await?;
+        Ok(())
     }
 
     pub fn status(&self) -> Option<CameraStatus> {
@@ -310,13 +345,24 @@ async fn run(
     mut requests: mpsc::Receiver<Request>,
     events: broadcast::Sender<Event>,
     status: watch::Sender<Option<CameraStatus>>,
+    gps: watch::Receiver<Option<GpsInput>>,
 ) {
     let mut seq = 1u16;
     let mut pending = HashMap::<u16, Pending>::new();
     let mut tick = interval(Duration::from_millis(250));
     let mut sleeping = false;
+    let mut gps_tick = interval(Duration::from_millis(100));
+    gps_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let reason = loop {
         tokio::select! {
+            _ = gps_tick.tick() => {
+                let latest = gps.borrow().clone();
+                if let Some(fix) = latest.filter(|fix| !sleeping && fix.received_at.elapsed() < Duration::from_secs(2)) {
+                    loop { seq = seq.wrapping_add(1); if !pending.contains_key(&seq) { break; } }
+                    let frame = Frame { kind: 0, seq, command: [0, 0x17], payload: fix.payload };
+                    if let Err(error) = link.send(&frame).await { break error.to_string(); }
+                }
+            }
             request = requests.recv() => {
                 let Some(request) = request else { break "controller closed".to_string(); };
                 if sleeping {
