@@ -80,15 +80,6 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn push(&mut self, input: &[u8]) -> Vec<Frame> {
-        self.push_with_raw(input)
-            .into_iter()
-            .map(|(frame, _)| frame)
-            .collect()
-    }
-
-    /// Keep the received bytes alongside decoded fields for accurate wire logs.
-    /// Re-encoding would replace header reserved bytes and recalculate the CRCs.
-    pub(crate) fn push_with_raw(&mut self, input: &[u8]) -> Vec<(Frame, Vec<u8>)> {
         let mut frames = Vec::new();
         for byte in input {
             self.buffer.push(*byte);
@@ -117,7 +108,7 @@ impl Decoder {
                 }
                 match Frame::decode(&self.buffer[..len]) {
                     Ok(frame) => {
-                        frames.push((frame, self.buffer[..len].to_vec()));
+                        frames.push(frame);
                         self.buffer.drain(..len);
                     }
                     Err(_) => {
@@ -181,20 +172,5 @@ mod tests {
                 vec![frame.clone(), frame.clone()]
             );
         }
-
-        // A camera may use nonzero reserved header bytes. Logs must preserve
-        // the actual bytes and checksums rather than reconstructing the frame.
-        let mut raw = SAMPLE.to_vec();
-        raw[5..8].copy_from_slice(&[0x12, 0x34, 0x56]);
-        let header_crc = crc16(&raw[..10]).to_le_bytes();
-        raw[10..12].copy_from_slice(&header_crc);
-        let end = raw.len() - 4;
-        let frame_crc = crc32(&raw[..end]).to_le_bytes();
-        raw[end..].copy_from_slice(&frame_crc);
-        let mut decoder = Decoder::default();
-        assert!(decoder.push_with_raw(&raw[..13]).is_empty());
-        let decoded = decoder.push_with_raw(&raw[13..]);
-        assert_eq!(decoded[0].1, raw);
-        assert_ne!(decoded[0].0.encode().unwrap(), raw);
     }
 }

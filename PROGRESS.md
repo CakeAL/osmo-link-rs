@@ -98,17 +98,3 @@ and a clearer fallback display name (including advertisement-name fallback).
 Changed CLI's default scan duration to 10 seconds and added `scan <1..60>`.
 Permission/adapter failures are reported separately instead of silently producing
 an empty result. Existing focused tests and strict Clippy pass.
-
-## Follow-up: full raw TX/RX frame display
-
-macOS CLI now enables the dedicated `osmo_core::wire` log target by default.
-Each record shows TX/RX, CMD/ACK, sequence, hexadecimal command/type, byte count,
-and the full uppercase hexadecimal packet including headers and CRCs. The decoder
-retains the actual received bytes alongside parsed frames, avoiding reconstructed
-RX data that would overwrite reserved header fields. Handshake traffic is included.
-
-Extended the existing protocol regression check with a fragmented packet carrying
-nonzero reserved header bytes; logged bytes remain exact although re-encoding
-would produce a different packet. All three focused tests, formatting and strict
-Clippy pass; CLI help reflects the default display and `RUST_LOG=warn` opt-out.
-No new camera actions or hardware validation were needed for this logging change.

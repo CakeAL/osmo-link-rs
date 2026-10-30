@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt, pin::Pin, time::Duration};
+use std::{collections::VecDeque, pin::Pin, time::Duration};
 
 use btleplug::{
     api::{
@@ -117,7 +117,7 @@ pub(crate) struct Link {
     write_type: WriteType,
     notifications: Pin<Box<dyn Stream<Item = ValueNotification> + Send>>,
     decoder: Decoder,
-    frames: VecDeque<(Frame, Vec<u8>)>,
+    frames: VecDeque<Frame>,
 }
 
 impl Link {
@@ -167,7 +167,7 @@ impl Link {
 
     pub async fn send(&mut self, frame: &Frame) -> Result<()> {
         let bytes = frame.encode()?;
-        log_frame("TX", frame, &bytes);
+        tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?bytes, "TX");
         let size = usize::from(self.peripheral.mtu().saturating_sub(3)).max(20);
         timeout(Duration::from_secs(3), async {
             for chunk in bytes.chunks(size) {
@@ -183,40 +183,18 @@ impl Link {
 
     pub async fn receive(&mut self) -> Result<Frame> {
         loop {
-            if let Some((frame, raw)) = self.frames.pop_front() {
-                log_frame("RX", &frame, &raw);
+            if let Some(frame) = self.frames.pop_front() {
+                tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?frame.payload, "RX");
                 return Ok(frame);
             }
             let notification = self.notifications.next().await.ok_or(Error::Disconnected)?;
             if notification.uuid == uuid(0xfff4) {
-                self.frames
-                    .extend(self.decoder.push_with_raw(&notification.value));
+                self.frames.extend(self.decoder.push(&notification.value));
             }
         }
     }
 
     pub async fn close(&mut self) {
         let _ = timeout(Duration::from_secs(3), self.peripheral.disconnect()).await;
-    }
-}
-
-fn log_frame(direction: &str, frame: &Frame, raw: &[u8]) {
-    tracing::info!(target: "osmo_core::wire",
-        "{direction} {} SEQ={} CMD={:02X} {:02X} TYPE={:02X} LEN={} RAW={}",
-        if frame.is_ack() { "ACK" } else { "CMD" },
-        frame.seq, frame.command[0], frame.command[1], frame.kind, raw.len(), HexBytes(raw));
-}
-
-struct HexBytes<'a>(&'a [u8]);
-
-impl fmt::Display for HexBytes<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, byte) in self.0.iter().enumerate() {
-            if i != 0 {
-                f.write_str(" ")?;
-            }
-            write!(f, "{byte:02X}")?;
-        }
-        Ok(())
     }
 }
