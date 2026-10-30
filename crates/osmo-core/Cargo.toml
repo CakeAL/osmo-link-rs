@@ -5,3 +5,8 @@ edition.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+tokio.workspace = true
+btleplug = "0.13.5"
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"

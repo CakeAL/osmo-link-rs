@@ -1,0 +1,161 @@
+use std::{collections::VecDeque, pin::Pin, time::Duration};
+
+use btleplug::{
+    api::{
+        Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter,
+        ValueNotification, WriteType,
+    },
+    platform::{Adapter, Manager, Peripheral},
+};
+use futures_util::{Stream, StreamExt};
+use tokio::time::{sleep, timeout};
+use uuid::Uuid;
+
+use crate::{
+    Error, Result,
+    protocol::{Decoder, Frame},
+};
+
+fn uuid(short: u16) -> Uuid {
+    Uuid::from_u128(((short as u128) << 96) | 0x0000_1000_8000_0080_5f9b_34fb)
+}
+
+#[derive(Debug, Clone)]
+pub struct Device {
+    /// Opaque platform ID. macOS/iOS do not expose the camera's BLE MAC address.
+    pub id: String,
+    pub name: String,
+    pub rssi: Option<i16>,
+    pub(crate) peripheral: Peripheral,
+}
+
+pub struct Scanner {
+    adapter: Adapter,
+}
+
+impl Scanner {
+    pub async fn new() -> Result<Self> {
+        let adapter = Manager::new()
+            .await?
+            .adapters()
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::NoAdapter)?;
+        Ok(Self { adapter })
+    }
+
+    pub async fn scan(&self, duration: Duration) -> Result<Vec<Device>> {
+        self.adapter.start_scan(ScanFilter::default()).await?;
+        sleep(duration).await;
+        self.adapter.stop_scan().await?;
+        let mut devices = Vec::new();
+        for peripheral in self.adapter.peripherals().await? {
+            let Some(properties) = peripheral.properties().await? else {
+                continue;
+            };
+            // btleplug separates the first two manufacturer bytes into company ID.
+            if properties
+                .manufacturer_data
+                .get(&0x08aa)
+                .is_some_and(|data| data.get(2) == Some(&0xfa))
+            {
+                devices.push(Device {
+                    id: peripheral.id().to_string(),
+                    name: properties.local_name.unwrap_or_else(|| "DJI Osmo".into()),
+                    rssi: properties.rssi,
+                    peripheral,
+                });
+            }
+        }
+        devices.sort_by_key(|d| std::cmp::Reverse(d.rssi));
+        Ok(devices)
+    }
+}
+
+pub(crate) struct Link {
+    pub peripheral: Peripheral,
+    write: Characteristic,
+    write_type: WriteType,
+    notifications: Pin<Box<dyn Stream<Item = ValueNotification> + Send>>,
+    decoder: Decoder,
+    frames: VecDeque<Frame>,
+}
+
+impl Link {
+    pub async fn open(device: &Device) -> Result<Self> {
+        let peripheral = device.peripheral.clone();
+        let result = timeout(Duration::from_secs(15), async {
+            peripheral.connect().await?;
+            peripheral.discover_services().await?;
+            let characteristics = peripheral.characteristics();
+            let notify = characteristics
+                .iter()
+                .find(|c| c.service_uuid == uuid(0xfff0) && c.uuid == uuid(0xfff4))
+                .ok_or(Error::MissingCharacteristics)?;
+            let write = characteristics
+                .iter()
+                .find(|c| c.service_uuid == uuid(0xfff0) && c.uuid == uuid(0xfff5))
+                .ok_or(Error::MissingCharacteristics)?
+                .clone();
+            let write_type = if write
+                .properties
+                .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+            {
+                WriteType::WithoutResponse
+            } else if write.properties.contains(CharPropFlags::WRITE) {
+                WriteType::WithResponse
+            } else {
+                return Err(Error::MissingCharacteristics);
+            };
+            let notifications = peripheral.notifications().await?;
+            peripheral.subscribe(notify).await?;
+            Ok(Self {
+                peripheral: peripheral.clone(),
+                write,
+                write_type,
+                notifications,
+                decoder: Decoder::default(),
+                frames: VecDeque::new(),
+            })
+        })
+        .await
+        .unwrap_or(Err(Error::Timeout("BLE connection")));
+        if result.is_err() {
+            let _ = timeout(Duration::from_secs(3), peripheral.disconnect()).await;
+        }
+        result
+    }
+
+    pub async fn send(&mut self, frame: &Frame) -> Result<()> {
+        let bytes = frame.encode()?;
+        tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?bytes, "TX");
+        let size = usize::from(self.peripheral.mtu().saturating_sub(3)).max(20);
+        for chunk in bytes.chunks(size) {
+            timeout(
+                Duration::from_secs(3),
+                self.peripheral.write(&self.write, chunk, self.write_type),
+            )
+            .await
+            .map_err(|_| Error::Timeout("BLE write"))??;
+        }
+        Ok(())
+    }
+
+    pub async fn receive(&mut self) -> Result<Frame> {
+        loop {
+            if let Some(frame) = self.frames.pop_front() {
+                tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?frame.payload, "RX");
+                return Ok(frame);
+            }
+            let notification = self.notifications.next().await.ok_or(Error::Disconnected)?;
+            if notification.uuid == uuid(0xfff4) {
+                self.frames.extend(self.decoder.push(&notification.value));
+            }
+        }
+    }
+
+    pub async fn close(&mut self) {
+        let _ = timeout(Duration::from_secs(3), self.peripheral.disconnect()).await;
+    }
+}

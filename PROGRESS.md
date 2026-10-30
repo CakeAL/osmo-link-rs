@@ -19,3 +19,11 @@ Created the two-crate workspace and bounded streaming frame decoder. CRC16 and
 CRC32 use DJI's initial value 0x3aa3; fields are encoded explicitly in little endian.
 The compact protocol test covers the official sample, corruption, split frames,
 combined frames, and resynchronization after other BLE data.
+
+## Step 2
+
+Implemented BLE discovery, notification assembly, MTU-based writes, and DJI's
+two-way authentication (including camera-initiated confirmation). A single task
+owns notifications and writes, correlates acknowledgements by sequence and
+command, and bounds command response waits. Failed authentication closes BLE.
+The CLI initially exposes scanning; interactive controls follow in step 5.
