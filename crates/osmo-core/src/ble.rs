@@ -2,8 +2,8 @@ use std::{collections::VecDeque, pin::Pin, time::Duration};
 
 use btleplug::{
     api::{
-        Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-        ValueNotification, WriteType,
+        Central, CentralState, CharPropFlags, Characteristic, Manager as _, Peripheral as _,
+        ScanFilter, ValueNotification, WriteType,
     },
     platform::{Adapter, Manager, Peripheral},
 };
@@ -46,14 +46,43 @@ impl Scanner {
     }
 
     pub async fn scan(&self, duration: Duration) -> Result<Vec<Device>> {
+        // CoreBluetooth start_scan only queues a request: it can succeed while
+        // Bluetooth is off or the terminal has no permission, then report no devices.
+        let state = timeout(Duration::from_secs(3), self.adapter.adapter_state())
+            .await
+            .map_err(|_| Error::Timeout("Bluetooth adapter state"))??;
+        tracing::debug!(?state, "Bluetooth scan adapter state");
+        match state {
+            CentralState::PoweredOn => {}
+            CentralState::PoweredOff => {
+                return Err(Error::AdapterNotReady("turn on Bluetooth on the host"));
+            }
+            CentralState::Unknown => {
+                return Err(Error::AdapterNotReady(
+                    "check Bluetooth permission for the terminal running this CLI; the adapter may also be initializing or resetting",
+                ));
+            }
+        }
         self.adapter.start_scan(ScanFilter::default()).await?;
         sleep(duration).await;
         self.adapter.stop_scan().await?;
         let mut devices = Vec::new();
-        for peripheral in self.adapter.peripherals().await? {
+        let peripherals = self.adapter.peripherals().await?;
+        let visible = peripherals.len();
+        for peripheral in peripherals {
             let Some(properties) = peripheral.properties().await? else {
                 continue;
             };
+            if properties.manufacturer_data.contains_key(&0x08aa)
+                || properties
+                    .local_name
+                    .as_deref()
+                    .is_some_and(|name| name.contains("Osmo") || name.contains("DJI"))
+            {
+                tracing::debug!(id = %peripheral.id(), name = ?properties.local_name,
+                    manufacturer_data = ?properties.manufacturer_data,
+                    services = ?properties.services, "DJI scan candidate");
+            }
             // btleplug separates the first two manufacturer bytes into company ID.
             if properties
                 .manufacturer_data
@@ -62,13 +91,22 @@ impl Scanner {
             {
                 devices.push(Device {
                     id: peripheral.id().to_string(),
-                    name: properties.local_name.unwrap_or_else(|| "DJI Osmo".into()),
+                    // Display fallback only; names never decide compatibility.
+                    name: properties
+                        .local_name
+                        .or(properties.advertisement_name)
+                        .unwrap_or_else(|| "Unnamed DJI camera".into()),
                     rssi: properties.rssi,
                     peripheral,
                 });
             }
         }
         devices.sort_by_key(|d| std::cmp::Reverse(d.rssi));
+        tracing::debug!(
+            visible,
+            matched = devices.len(),
+            "Bluetooth scan results (backend cache)"
+        );
         Ok(devices)
     }
 }

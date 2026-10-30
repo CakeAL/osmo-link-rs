@@ -30,11 +30,18 @@ quit
 也可以 `cargo run -p macos-cli -- --scan` 或
 `cargo run -p macos-cli -- --connect OsmoAction4-B15B`。
 `help` 列出命令；`watch on` 持续显示状态。
+扫描默认 10 秒；`scan 20` 可延长到 20 秒（允许 1–60 秒）。
+设备是否匹配由 DJI 厂商广播标记决定，不依赖设备名称或名称前缀。
+未提供名称时显示 `Unnamed DJI camera`，这只是界面占位文字。
 支持从标准输入管道逐行执行命令，`wait` 期间继续收状态、发送 GPS。
 
 macOS 需允许运行 CLI 的终端使用蓝牙。独立应用需在 Info.plist 配置
 `NSBluetoothAlwaysUsageDescription`。本项目已在当前 Mac 的 Codex 执行环境中
 获得蓝牙访问并完成 Action 4 配对。
+若扫描提示 adapter not ready，请检查运行 CLI 的终端（Terminal、iTerm、VS Code 等）
+是否拥有蓝牙权限，以及主机蓝牙是否开启。若状态正常但为空，保持相机亮屏、
+开启无线连接、断开其他遥控器/App 后尝试 `scan 20`。
+`RUST_LOG=osmo_core=debug cargo run -p macos-cli` 会输出适配器状态及 DJI 候选广播。
 
 配对身份与历史默认保存于：
 `~/Library/Application Support/osmo-link-rs/controller.json`。

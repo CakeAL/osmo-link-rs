@@ -84,3 +84,17 @@ license/fixture attribution. Named the combined photo/video status helper
 Clippy pass. iOS aarch64 and Android aarch64 core compilation checks both pass.
 No mobile app execution, video metadata extraction, broadcast wake, or forced
 reconnection stress testing is claimed.
+
+## Follow-up: intermittent empty scans
+
+On the user's awake Action 4, a fresh process discovered the camera with the
+expected 0x08aa manufacturer ID and FA marker. In a separate same-process check,
+the first five-second scan saw 23 cached peripherals and no target; the second
+scan discovered the Action 4. This reproduces a short-window miss, without proving
+its underlying radio/OS cause. No name-prefix filtering is used.
+
+Added a Bluetooth adapter state check before scanning, candidate/result debug logs,
+and a clearer fallback display name (including advertisement-name fallback).
+Changed CLI's default scan duration to 10 seconds and added `scan <1..60>`.
+Permission/adapter failures are reported separately instead of silently producing
+an empty result. Existing focused tests and strict Clippy pass.

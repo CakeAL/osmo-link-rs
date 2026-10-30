@@ -10,6 +10,8 @@ pub enum Error {
     Protocol(#[from] ProtocolError),
     #[error("no Bluetooth adapter available")]
     NoAdapter,
+    #[error("Bluetooth adapter is not ready: {0}")]
+    AdapterNotReady(&'static str),
     #[error("camera service or characteristics missing")]
     MissingCharacteristics,
     #[error("camera disconnected")]

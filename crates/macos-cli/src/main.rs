@@ -71,14 +71,19 @@ impl App {
     fn camera(&self) -> Result<&Camera> {
         self.camera.as_ref().ok_or_else(|| "connect first".into())
     }
-    async fn scan(&mut self) -> Result<()> {
-        println!("Scanning for DJI cameras (5 seconds)…");
-        self.devices = self.scanner.scan(Duration::from_secs(5)).await?;
+    async fn scan(&mut self, seconds: u64) -> Result<()> {
+        if !(1..=60).contains(&seconds) {
+            return Err("scan duration must be 1..60 seconds".into());
+        }
+        println!("Scanning for DJI cameras ({seconds} seconds)…");
+        self.devices = self.scanner.scan(Duration::from_secs(seconds)).await?;
         for (i, d) in self.devices.iter().enumerate() {
             println!("{i}  {}  {}  RSSI {:?}", d.id, d.name, d.rssi);
         }
         if self.devices.is_empty() {
-            println!("No supported camera found; enable the camera's wireless connection.");
+            println!(
+                "No supported camera found. Wake the camera, enable wireless, and disconnect other remotes/apps. For scan details, restart with RUST_LOG=osmo_core=debug."
+            );
         }
         Ok(())
     }
@@ -87,7 +92,7 @@ impl App {
             return Err("disconnect the current camera first".into());
         }
         if self.devices.is_empty() {
-            self.scan().await?;
+            self.scan(10).await?;
         }
         let device = match selector {
             Some(s) => self
@@ -127,7 +132,10 @@ impl App {
         };
         match command {
             "help" => help(),
-            "scan" => self.scan().await?,
+            "scan" => {
+                self.scan(parts.next().map(str::parse).transpose()?.unwrap_or(10))
+                    .await?
+            }
             "connect" => self.connect(parts.next()).await?,
             "version" => println!("{:#?}", self.camera()?.version().await?),
             "status" => println!("{:#?}", self.camera()?.status()),
@@ -345,7 +353,7 @@ fn load_gps(path: &str) -> Result<Vec<GpsSample>> {
 }
 fn help() {
     println!(
-        "Commands:\n  scan | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode video|photo|slow|timelapse|hyperlapse|<number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit\n  wake | snapshot (manufacturer advertising unsupported by this backend)"
+        "Commands:\n  scan [seconds] | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode video|photo|slow|timelapse|hyperlapse|<number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit\n  wake | snapshot (manufacturer advertising unsupported by this backend)"
     );
 }
 #[tokio::main]
@@ -368,7 +376,7 @@ async fn main() -> Result<()> {
     match args.as_slice() {
         [] => {}
         [scan] if scan == "--scan" => {
-            app.scan().await?;
+            app.scan(10).await?;
             return Ok(());
         }
         [connect, selector] if connect == "--connect" => app.connect(Some(selector)).await?,
