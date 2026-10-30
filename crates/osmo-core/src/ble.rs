@@ -131,15 +131,16 @@ impl Link {
         let bytes = frame.encode()?;
         tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?bytes, "TX");
         let size = usize::from(self.peripheral.mtu().saturating_sub(3)).max(20);
-        for chunk in bytes.chunks(size) {
-            timeout(
-                Duration::from_secs(3),
-                self.peripheral.write(&self.write, chunk, self.write_type),
-            )
-            .await
-            .map_err(|_| Error::Timeout("BLE write"))??;
-        }
-        Ok(())
+        timeout(Duration::from_secs(3), async {
+            for chunk in bytes.chunks(size) {
+                self.peripheral
+                    .write(&self.write, chunk, self.write_type)
+                    .await?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| Error::Timeout("BLE write"))?
     }
 
     pub async fn receive(&mut self) -> Result<Frame> {

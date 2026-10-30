@@ -16,6 +16,10 @@ pub enum Error {
     Disconnected,
     #[error("camera is sleeping; wake it before sending data")]
     Sleeping,
+    #[error("camera is reconnecting")]
+    Reconnecting,
+    #[error("unsupported capability: {0}")]
+    Unsupported(&'static str),
     #[error("{0} timed out; the camera may have received the command")]
     Timeout(&'static str),
     #[error("camera rejected pairing")]

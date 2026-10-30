@@ -50,3 +50,21 @@ identity and pairing history, protocol logging, controls, and timestamp-paced
 JSONL GPS playback. `wait` keeps reception and playback active in scripted checks.
 Per user clarification, GPS now defaults to 1Hz, configurable via
 `ConnectOptions::gps_interval` (100ms..1s); GNSS acquisition frequency is separate.
+
+## Step 6
+
+Added bounded reconnect (at most two attempts), subscription restoration, explicit
+async disconnect, connection-state events, and cleanup on drop. Commands are never
+replayed after reconnect; GPS requires a fresh input. Sleep requests pause writes
+immediately, including when the response is uncertain. Wake/snapshot report the
+backend's missing manufacturer-advertising capability. Android initialization is
+re-exported for a later native shell.
+
+Hardware finding: Action 4 (SDK-v1.1 DEBUG AC203-03.04.80.15) authenticates as
+0x0000ff33. Its mode-switch ACK uses 1D03 despite receiving 1D04; compatibility
+accepts that pair only for Action 4 and an exact pending sequence. Start/stop,
+version, and pairing use their expected command IDs.
+
+The user subsequently selected 10Hz again. Final default is 100ms; acquisition
+rate remains independent of transmission rate. No interpolation or fabricated
+sampling timestamps are introduced.

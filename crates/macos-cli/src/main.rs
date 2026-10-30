@@ -108,7 +108,7 @@ impl App {
         );
         let camera = Camera::connect(&device, options).await?;
         println!(
-            "DJI authenticated; camera ID {:#010x}; GPS send rate 1Hz",
+            "DJI authenticated; camera ID {:#010x}; GPS send rate 10Hz",
             camera.device_id
         );
         self.events = Some(camera.events());
@@ -212,7 +212,7 @@ impl App {
                         "replay" => {
                             self.camera()?;
                             println!(
-                                "Replaying {} recorded fixes at their original intervals; BLE sends at 1Hz. Test data only.",
+                                "Replaying {} recorded fixes at their original intervals; BLE sends at 10Hz. Test data only.",
                                 samples.len()
                             );
                             self.replay = Some(Replay {
@@ -235,10 +235,14 @@ impl App {
                 self.camera()?.reboot().await?;
                 println!("Restart acknowledged");
             }
+            "wake" => self.camera()?.wake().await?,
+            "snapshot" => self.camera()?.snapshot().await?,
             "disconnect" => {
                 self.replay = None;
                 self.events = None;
-                self.camera.take();
+                if let Some(camera) = self.camera.take() {
+                    camera.disconnect().await?;
+                }
                 println!("Disconnected");
             }
             _ => return Err("unknown command; type help".into()),
@@ -287,6 +291,14 @@ impl App {
                 s.power_mode
             ),
             Event::ModeInfo(info) if self.watch => println!("{} {}", info.name, info.parameters),
+            Event::Reconnecting(attempt) => {
+                self.replay = None;
+                if let Some(camera) = &self.camera {
+                    camera.stop_gps();
+                }
+                eprintln!("Reconnecting (attempt {attempt}/2)…");
+            }
+            Event::Reconnected => println!("Reconnected; status subscription restored"),
             Event::Warning(warning) => eprintln!("Warning: {warning}"),
             Event::Disconnected(reason) => {
                 eprintln!("Disconnected: {reason}");
@@ -333,7 +345,7 @@ fn load_gps(path: &str) -> Result<Vec<GpsSample>> {
 }
 fn help() {
     println!(
-        "Commands:\n  scan | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode video|photo|slow|timelapse|hyperlapse|<number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit"
+        "Commands:\n  scan | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode video|photo|slow|timelapse|hyperlapse|<number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit\n  wake | snapshot (manufacturer advertising unsupported by this backend)"
     );
 }
 #[tokio::main]
@@ -404,9 +416,7 @@ async fn main() -> Result<()> {
         }
     }
     if let Some(camera) = app.camera.take() {
-        camera.stop_gps();
-        drop(camera);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        camera.disconnect().await?;
     }
     Ok(())
 }
