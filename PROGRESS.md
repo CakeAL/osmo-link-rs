@@ -111,3 +111,11 @@ Background state pushes, subscription traffic, periodic GPS and unrelated ACKs a
 silent. Removed generic BLE frame debug logs as well. CLI output omits tracing
 prefixes, with `RUST_LOG=warn` available to disable command DATA. The three existing
 focused tests and strict Clippy pass; no additional hardware actions were taken.
+
+## Follow-up: mode ACK compatibility for every model
+
+Removed the Action 4 device-ID restriction at the user's request. Any model's
+1D04 mode-switch request can be acknowledged as 1D04 or 1D03. Matching still
+requires an ACK with the exact pending sequence, and nonzero response codes remain
+errors. Updated the existing focused compatibility test and current documentation;
+this changes the supported rule without claiming new hardware coverage.

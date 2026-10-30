@@ -599,7 +599,7 @@ impl Worker {
                 incoming = self.link.receive() => {
                     match incoming {
                         Ok(frame) => {
-                            if frame.is_ack() && pending.get(&frame.seq).is_some_and(|p| ack_matches(self.device_id, p.command, frame.command)) {
+                            if frame.is_ack() && pending.get(&frame.seq).is_some_and(|p| ack_matches(p.command, frame.command)) {
                                 log_command_data("RX", &frame);
                                 let entry = pending.remove(&frame.seq).unwrap();
                                 if entry.sleep {
@@ -672,11 +672,12 @@ impl fmt::Display for DataSegment<'_> {
     }
 }
 
-fn ack_matches(camera_id: u32, requested: [u8; 2], received: [u8; 2]) -> bool {
+fn ack_matches(requested: [u8; 2], received: [u8; 2]) -> bool {
     requested == received
-        // Action 4 firmware 03.04.80.15 returns 1D03 for 1D04 mode switches.
-        // The caller also requires the exact sequence number; all other IDs stay strict.
-        || (camera_id == 0xff33 && requested == [0x1d, 4] && received == [0x1d, 3])
+        // Accept mode-switch ACKs using the record-control command on all models.
+        // The caller still requires the exact sequence number and an ACK frame;
+        // control() checks the returned status code independently.
+        || (requested == [0x1d, 4] && received == [0x1d, 3])
 }
 
 #[cfg(test)]
@@ -684,10 +685,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn action4_mode_ack_is_narrowly_scoped() {
-        assert!(ack_matches(0xff33, [0x1d, 4], [0x1d, 3]));
-        assert!(!ack_matches(0xff44, [0x1d, 4], [0x1d, 3]));
-        assert!(!ack_matches(0xff33, [0x1d, 3], [0x1d, 4]));
-        assert!(!ack_matches(0xff33, [0, 0x1a], [0x1d, 3]));
+    fn mode_ack_compatibility_is_model_independent() {
+        assert!(ack_matches([0x1d, 4], [0x1d, 3]));
+        assert!(ack_matches([0x1d, 4], [0x1d, 4]));
+        assert!(ack_matches([0x1d, 3], [0x1d, 3]));
+        assert!(!ack_matches([0x1d, 3], [0x1d, 4]));
+        assert!(!ack_matches([0, 0x1a], [0x1d, 3]));
     }
 }
