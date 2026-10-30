@@ -27,3 +27,11 @@ two-way authentication (including camera-initiated confirmation). A single task
 owns notifications and writes, correlates acknowledgements by sequence and
 command, and bounds command response waits. Failed authentication closes BLE.
 The CLI initially exposes scanning; interactive controls follow in step 5.
+
+## Step 3
+
+Added version queries, explicit start/stop, mode switching, button events and
+states, restart, sleep, and status subscription. Both 1D02 and 1D06 state messages
+are decoded; the latest state is available through a watch channel. A successful
+sleep acknowledgement blocks further writes. Command targets use the camera ID
+returned by authentication, rather than the demo's inconsistent hardcoded IDs.

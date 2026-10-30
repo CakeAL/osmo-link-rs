@@ -14,6 +14,8 @@ pub enum Error {
     MissingCharacteristics,
     #[error("camera disconnected")]
     Disconnected,
+    #[error("camera is sleeping; wake it before sending data")]
+    Sleeping,
     #[error("{0} timed out; the camera may have received the command")]
     Timeout(&'static str),
     #[error("camera rejected pairing")]
