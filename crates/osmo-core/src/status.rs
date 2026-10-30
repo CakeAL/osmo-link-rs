@@ -57,7 +57,7 @@ impl CameraStatus {
         })
     }
 
-    pub fn is_recording(&self) -> bool {
+    pub fn is_capturing(&self) -> bool {
         self.state == 3
     }
 }

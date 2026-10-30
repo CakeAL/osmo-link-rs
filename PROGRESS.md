@@ -68,3 +68,19 @@ version, and pairing use their expected command IDs.
 The user subsequently selected 10Hz again. Final default is 100ms; acquisition
 rate remains independent of transmission rate. No interpolation or fabricated
 sampling timestamps are introduced.
+
+## Step 7
+
+Completed the short macOS Action 4 hardware check: authentication, reconnect using
+saved pairing identity, version/status, photo mode and shutter, video mode, actual
+recording start/stop transitions, concurrent historical GPS playback, and sleep.
+GPS TX interval median was 99.943ms in the verification log. No TX followed the
+sleep request; a subsequent version command returned Sleeping locally.
+
+Added README, exact mode-ACK evidence and test boundaries in
+`docs/macos-validation.md`, the six-fix upstream GPS playback file, and upstream
+license/fixture attribution. Named the combined photo/video status helper
+`is_capturing` to match the wire semantics. Format, three focused tests, and strict
+Clippy pass. iOS aarch64 and Android aarch64 core compilation checks both pass.
+No mobile app execution, video metadata extraction, broadcast wake, or forced
+reconnection stress testing is claimed.

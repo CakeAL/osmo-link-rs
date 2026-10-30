@@ -282,10 +282,10 @@ impl App {
     fn event(&mut self, event: Event) {
         match event {
             Event::Status(s) if self.watch => println!(
-                "state={} mode={:#04x} recording={} time={}s battery={}% power={}",
+                "state={} mode={:#04x} capturing={} time={}s battery={}% power={}",
                 s.state,
                 s.mode,
-                s.is_recording(),
+                s.is_capturing(),
                 s.record_seconds,
                 s.battery_percent,
                 s.power_mode

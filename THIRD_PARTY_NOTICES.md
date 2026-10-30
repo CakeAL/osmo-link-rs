@@ -1,0 +1,63 @@
+# Upstream reference and fixture attribution
+
+The Rust implementation follows the public DJI R SDK protocol. Protocol sample
+bytes and `examples/dji-gps.jsonl` (converted from the first six frames in
+`test/test_gps.c`) come from DJI Osmo-GPS-Controller-Demo, revision
+`92fe23e5a749f189593f980a26a105c3bb66aa1c`.
+
+Upstream: https://github.com/dji-sdk/Osmo-GPS-Controller-Demo
+
+The GPS fixture is historical test data, not live positioning. The upstream
+license text is reproduced below, including its protocol/EULA notices.
+
+```text
+********************************************************************************************************
+
+DJI R SDK Protocol (including but not limited to documents: 
+protocol_CN.md, protocol.md, protocol_data_segment_CN.md, protocol_data_segment.md)
+is offered under DJI's END USER LICENSE AGREEMENT. 
+
+You can obtain the license from the below link:
+http://developer.dji.com/policies/eula/
+
+********************************************************************************************************
+
+Osmo GPS Controller Demo is offered under DJI's END USER LICENSE AGREEMENT.
+
+You can obtain the license from the below link:
+http://developer.dji.com/policies/eula/
+
+********************************************************************************************************
+
+Osmo GPS Controller Demo is offered under MIT License (See below).
+
+The MIT License (MIT)
+Copyright (c) 2025 SZ DJI Technology Co., Ltd.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+********************************************************************************************************
+
+The Osmo Action GPS Bluetooth Remote Controller (ESP32-C6-Example) demo uses esp-idf, 
+which is released under the Apache License Version 2.0. 
+
+The source code of esp-idf is available at: https://github.com/espressif/esp-idf.
+
+********************************************************************************************************
+```
