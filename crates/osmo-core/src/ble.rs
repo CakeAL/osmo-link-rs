@@ -167,7 +167,6 @@ impl Link {
 
     pub async fn send(&mut self, frame: &Frame) -> Result<()> {
         let bytes = frame.encode()?;
-        tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?bytes, "TX");
         let size = usize::from(self.peripheral.mtu().saturating_sub(3)).max(20);
         timeout(Duration::from_secs(3), async {
             for chunk in bytes.chunks(size) {
@@ -184,7 +183,6 @@ impl Link {
     pub async fn receive(&mut self) -> Result<Frame> {
         loop {
             if let Some(frame) = self.frames.pop_front() {
-                tracing::debug!(seq = frame.seq, command = ?frame.command, kind = frame.kind, data = ?frame.payload, "RX");
                 return Ok(frame);
             }
             let notification = self.notifications.next().await.ok_or(Error::Disconnected)?;

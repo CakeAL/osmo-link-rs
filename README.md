@@ -169,10 +169,30 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 仅保留三个针对性测试：官方协议帧、GPS 单位/日期转换、Action 4 应答差异。
-`RUST_LOG=osmo_core=debug cargo run -p macos-cli` 可查看协议收发日志。
-日志包含设备和 GPS 数据，默认只输出 warning。
+CLI 默认显示主动控制命令发送的 DATA 数据段，以及按序列号和命令号匹配到的应答 DATA：
+
+```text
+TX DATA=1D 04 33 FF 00 00 05 00 00 00 00
+RX DATA=1D 03 00
+```
+
+DATA 为 `CmdSet + CmdID + Payload`，不含帧头、长度、保留字段、CRC。
+后台状态推送、自动状态订阅、定时 GPS 推送及无关应答不显示。
+`gps once` 显示单次发送的数据；它不要求应答。`scan`、`status` 等本地操作不会伪造协议帧。
+上例展示 Action 4 模式切换的应答差异，保留相机实际返回的命令号。
+TX 在尝试写入前记录，发送失败仍会报告错误。
+
+```sh
+cargo run -p macos-cli                              # 命令 DATA 显示
+RUST_LOG=warn cargo run -p macos-cli                # 关闭 DATA 显示
+RUST_LOG=osmo_core=debug cargo run -p macos-cli      # 加上扫描诊断
+cargo run -p macos-cli 2>commands.log               # 保存命令 DATA 日志
+```
 
 协议来源：[DJI 官方示例](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo)。
 参考修订固定为 `92fe23e5a749f189593f980a26a105c3bb66aa1c`；
 上游许可与测试数据归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 分步提交记录见 [PROGRESS.md](PROGRESS.md)。
+
+协议：
+https://github.com/dji-sdk/Osmo-GPS-Controller-Demo/blob/main/docs/protocol_data_segment_CN.md

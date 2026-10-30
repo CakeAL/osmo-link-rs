@@ -98,3 +98,16 @@ and a clearer fallback display name (including advertisement-name fallback).
 Changed CLI's default scan duration to 10 seconds and added `scan <1..60>`.
 Permission/adapter failures are reported separately instead of silently producing
 an empty result. Existing focused tests and strict Clippy pass.
+
+## Follow-up: command DATA only
+
+Reverted d601fa9 (the full raw-frame display) at the user's request. The replacement
+logs only explicit control requests and their matching pending acknowledgements,
+plus one-shot GPS writes. DATA is the actual CmdSet + CmdID + payload in uppercase
+hex; framing and checksums are omitted. Command matching retains the exact sequence
+check and the existing narrow Action 4 mode-switch ACK compatibility rule.
+
+Background state pushes, subscription traffic, periodic GPS and unrelated ACKs are
+silent. Removed generic BLE frame debug logs as well. CLI output omits tracing
+prefixes, with `RUST_LOG=warn` available to disable command DATA. The three existing
+focused tests and strict Clippy pass; no additional hardware actions were taken.

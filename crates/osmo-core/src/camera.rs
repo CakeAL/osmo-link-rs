@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 
 use btleplug::api::Peripheral as _;
 use tokio::{
@@ -582,6 +582,11 @@ impl Worker {
                     let is_sleep = request.command == [0, 0x1a] && request.payload == [3];
                     let subscription = if request.command == [0x1d, 5] { request.payload.first().copied() } else { None };
                     let frame = Frame { kind: if request.wait { 2 } else { 0 }, seq, command: request.command, payload: request.payload };
+                    // Log explicit control requests and one-shot GPS, not the
+                    // automatic status subscription or periodic GPS worker.
+                    if request.wait || request.command == [0, 0x17] {
+                        log_command_data("TX", &frame);
+                    }
                     if let Err(error) = self.link.send(&frame).await {
                         let reason = error.to_string(); let _ = request.reply.send(Err(error)); break reason;
                     }
@@ -595,6 +600,7 @@ impl Worker {
                     match incoming {
                         Ok(frame) => {
                             if frame.is_ack() && pending.get(&frame.seq).is_some_and(|p| ack_matches(self.device_id, p.command, frame.command)) {
+                                log_command_data("RX", &frame);
                                 let entry = pending.remove(&frame.seq).unwrap();
                                 if entry.sleep {
                                     sleep_requested = false;
@@ -644,6 +650,25 @@ impl Worker {
             let _ = p.reply.send(Err(Error::Disconnected));
         }
         (reason, intentional, sleeping || sleep_requested)
+    }
+}
+
+fn log_command_data(direction: &str, frame: &Frame) {
+    tracing::info!(target: "osmo_core::commands", "{direction} DATA={}", DataSegment(frame));
+}
+
+/// DATA is CmdSet + CmdID + payload, without framing or checksums.
+struct DataSegment<'a>(&'a Frame);
+
+impl fmt::Display for DataSegment<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, byte) in self.0.command.iter().chain(&self.0.payload).enumerate() {
+            if i != 0 {
+                f.write_str(" ")?;
+            }
+            write!(f, "{byte:02X}")?;
+        }
+        Ok(())
     }
 }
 

@@ -359,15 +359,20 @@ fn help() {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
+        .without_time()
+        .with_target(false)
+        .with_level(false)
+        .with_ansi(false)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "warn,osmo_core::commands=info".into()),
         )
         .with_writer(io::stderr)
         .init();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
         println!(
-            "macos-cli [--scan | --connect <index|id|name>]\nRUST_LOG=osmo_core=debug enables frame logs; OSMO_STATE_DIR selects pairing storage."
+            "macos-cli [--scan | --connect <index|id|name>]\nCommand TX/RX DATA segments are shown by default. RUST_LOG=warn hides them; RUST_LOG=osmo_core=debug adds scan diagnostics. OSMO_STATE_DIR selects pairing storage."
         );
         help();
         return Ok(());
