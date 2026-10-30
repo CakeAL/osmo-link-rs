@@ -169,8 +169,21 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 仅保留三个针对性测试：官方协议帧、GPS 单位/日期转换、Action 4 应答差异。
-`RUST_LOG=osmo_core=debug cargo run -p macos-cli` 可查看协议收发日志。
-日志包含设备和 GPS 数据，默认只输出 warning。
+CLI 默认在标准错误输出完整的 DJI R SDK 收发帧，包括握手、命令应答、GPS 和状态推送。
+每条记录包含 `TX`/`RX`、`CMD`/`ACK`、序列号、十六进制命令号、类型、长度和 `RAW`。
+`RAW` 是大写十六进制原始字节（包含帧头、保留字段和 CRC）。接收端保留实际收到的
+完整帧，不使用解码后的字段重新构造，便于核对 `1D04` 请求与 `1D03` 应答的差异。
+BLE 拆包会先重组；这里只显示通过校验的 `0xAA` 协议帧，不是蓝牙空口抓包。
+
+```sh
+cargo run -p macos-cli                       # 默认显示完整帧
+RUST_LOG=warn cargo run -p macos-cli         # 关闭帧显示
+RUST_LOG=osmo_core=debug cargo run -p macos-cli # 加上扫描诊断
+cargo run -p macos-cli 2>frames.log          # 保存原始帧日志
+```
+
+TX 在尝试写入前记录，写入失败仍会报告错误；RX 为实际接收的有效完整帧。
+日志包含配对信息、设备和 GPS 数据。
 
 协议来源：[DJI 官方示例](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo)。
 参考修订固定为 `92fe23e5a749f189593f980a26a105c3bb66aa1c`；
