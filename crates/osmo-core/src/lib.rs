@@ -1,15 +1,15 @@
 //! Rust BLE remote controller for the public DJI R SDK protocol.
 mod ble;
 mod camera;
+pub mod enums;
 mod error;
 mod gps;
 pub mod protocol;
 mod status;
 
 pub use ble::{Device, Scanner};
-pub use camera::{
-    Camera, ConnectOptions, ConnectionState, ControllerIdentity, Event, Key, KeyEvent, Version,
-};
+pub use camera::{Camera, ConnectOptions, ConnectionState, ControllerIdentity, Event, Version};
+pub use enums::*;
 pub use error::{Error, Result};
 pub use gps::GpsSample;
 pub use status::{CameraStatus, ModeInfo};

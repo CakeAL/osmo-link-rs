@@ -1,5 +1,6 @@
 use osmo_core::{
-    Camera, ConnectOptions, ControllerIdentity, Device, Event, GpsSample, Key, KeyEvent, Scanner,
+    Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Event, GpsSample, Key,
+    KeyEvent, KeyState, Scanner, StatusPushMode, VerificationMode,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -106,7 +107,11 @@ impl App {
         }
         .ok_or("select a camera: connect <index|id|name>")?;
         let mut options = ConnectOptions::new(self.saved.identity);
-        options.first_pair = !self.saved.paired.contains(&device.id);
+        options.verification_mode = if self.saved.paired.contains(&device.id) {
+            VerificationMode::Automatic
+        } else {
+            VerificationMode::Required
+        };
         println!(
             "Connecting to {}; code {:04}. Allow the connection on the camera if prompted.",
             device.name, options.verification_code
@@ -114,7 +119,7 @@ impl App {
         let camera = Camera::connect(&device, options).await?;
         println!(
             "DJI authenticated; camera ID {:#010x}; GPS send rate 10Hz",
-            camera.device_id
+            camera.device_id.code()
         );
         self.events = Some(camera.events());
         self.camera = Some(camera);
@@ -122,7 +127,9 @@ impl App {
             self.saved.paired.push(device.id);
             self.save()?;
         }
-        self.camera()?.subscribe_status(3).await?;
+        self.camera()?
+            .subscribe_status(StatusPushMode::PeriodicAndChanges)
+            .await?;
         Ok(())
     }
     async fn command(&mut self, line: &str) -> Result<()> {
@@ -162,15 +169,8 @@ impl App {
             "mode" => {
                 let value = parts
                     .next()
-                    .ok_or("usage: mode video|photo|slow|timelapse|hyperlapse|<number>")?;
-                let mode = match value {
-                    "video" => 1,
-                    "photo" => 5,
-                    "slow" => 0,
-                    "timelapse" => 2,
-                    "hyperlapse" => 10,
-                    value => number(value)?,
-                };
+                    .ok_or("usage: mode <name|number>; type help for mode names")?;
+                let mode = camera_mode(value)?;
                 self.camera()?.set_mode(mode).await?;
                 println!("Mode command acknowledged");
             }
@@ -182,8 +182,8 @@ impl App {
                     _ => return Err("expected shutter|qs|snapshot".into()),
                 };
                 match parts.next() {
-                    Some("press") => self.camera()?.key_state(key, true).await?,
-                    Some("release") => self.camera()?.key_state(key, false).await?,
+                    Some("press") => self.camera()?.key_state(key, KeyState::Pressed).await?,
+                    Some("release") => self.camera()?.key_state(key, KeyState::Released).await?,
                     event => {
                         let event = match event {
                             Some("short") => KeyEvent::Short,
@@ -290,7 +290,7 @@ impl App {
     fn event(&mut self, event: Event) {
         match event {
             Event::Status(s) if self.watch => println!(
-                "state={} mode={:#04x} capturing={} time={}s battery={}% power={}",
+                "state={} mode={} capturing={} time={}s battery={}% power={}",
                 s.state,
                 s.mode,
                 s.is_capturing(),
@@ -318,6 +318,35 @@ impl App {
         }
     }
 }
+const CAMERA_MODES: &[(&str, CameraMode)] = &[
+    ("slow", CameraMode::SlowMotion),
+    ("video", CameraMode::Video),
+    ("timelapse", CameraMode::Timelapse),
+    ("photo", CameraMode::Photo),
+    ("hyperlapse", CameraMode::Hyperlapse),
+    ("livestream", CameraMode::LiveStream),
+    ("uvc", CameraMode::UvcLiveStream),
+    ("supernight", CameraMode::SuperNight),
+    ("tracking", CameraMode::SubjectTracking),
+    ("panorama-video", CameraMode::PanoramicVideo),
+    ("panorama-hyperlapse", CameraMode::PanoramicHyperlapse),
+    ("selfie", CameraMode::Selfie),
+    ("panorama-photo", CameraMode::PanoramicPhoto),
+    ("ultrawide-video", CameraMode::UltraWideVideo),
+    ("time-freeze", CameraMode::TimeFreeze),
+    ("panorama-supernight", CameraMode::PanoramicSuperNight),
+    ("single-lens-supernight", CameraMode::SingleLensSuperNight),
+];
+
+fn camera_mode(value: &str) -> Result<CameraMode> {
+    let mode = match CAMERA_MODES.iter().find(|(name, _)| *name == value) {
+        Some((_, mode)) => *mode,
+        None => CameraMode::from_code(number(value)?),
+    };
+    mode.checked_code()?;
+    Ok(mode)
+}
+
 fn number(value: &str) -> Result<u8> {
     Ok(if let Some(hex) = value.strip_prefix("0x") {
         u8::from_str_radix(hex, 16)?
@@ -353,7 +382,15 @@ fn load_gps(path: &str) -> Result<Vec<GpsSample>> {
 }
 fn help() {
     println!(
-        "Commands:\n  scan [seconds] | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode video|photo|slow|timelapse|hyperlapse|<number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit\n  wake | snapshot (manufacturer advertising unsupported by this backend)"
+        "Commands:\n  scan [seconds] | connect [index|id|name] | version | status | watch on|off\n  record start|stop | shutter | mode <name|number> | qs\n  key shutter|qs|snapshot short|long|double|triple|quad|press|release\n  gps replay|once <file.jsonl> | gps stop\n  sleep | reboot | disconnect | wait <seconds> | quit\n  wake | snapshot (manufacturer advertising unsupported by this backend)"
+    );
+    println!(
+        "Modes: {}",
+        CAMERA_MODES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 }
 #[tokio::main]

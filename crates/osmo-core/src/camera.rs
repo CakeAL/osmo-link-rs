@@ -6,7 +6,11 @@ use tokio::{
     time::{Instant, interval, timeout},
 };
 
-use crate::{CameraStatus, Device, Error, GpsSample, ModeInfo, Result, ble::Link, protocol::Frame};
+use crate::{
+    CameraMode, CameraModel, CameraStatus, Device, Error, GpsSample, Key, KeyEvent, KeyReportMode,
+    KeyState, ModeInfo, PowerMode, RecordControl, Result, ReturnCode, StatusPushFrequency,
+    StatusPushMode, VerificationMode, VerificationResult, ble::Link, protocol::Frame,
+};
 
 /// Application-owned identity, independent of the host's private Bluetooth MAC.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -31,7 +35,7 @@ impl Default for ControllerIdentity {
 #[derive(Debug, Clone)]
 pub struct ConnectOptions {
     pub identity: ControllerIdentity,
-    pub first_pair: bool,
+    pub verification_mode: VerificationMode,
     pub verification_code: u16,
     /// GPS transmission period. Default: 100ms (10Hz); maximum: one second.
     pub gps_interval: Duration,
@@ -41,7 +45,7 @@ impl ConnectOptions {
     pub fn new(identity: ControllerIdentity) -> Self {
         Self {
             identity,
-            first_pair: false,
+            verification_mode: VerificationMode::Automatic,
             verification_code: (uuid::Uuid::new_v4().as_u128() % 10000) as u16,
             gps_interval: Duration::from_millis(100),
         }
@@ -73,24 +77,6 @@ pub struct Version {
     pub details: String,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum Key {
-    Shutter = 1,
-    Qs = 2,
-    Snapshot = 3,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u16)]
-pub enum KeyEvent {
-    Short = 0,
-    Long = 1,
-    Double = 2,
-    Triple = 3,
-    Quadruple = 4,
-}
-
 struct Request {
     command: [u8; 2],
     payload: Vec<u8>,
@@ -112,7 +98,7 @@ struct GpsInput {
 }
 
 pub struct Camera {
-    pub device_id: u32,
+    pub device_id: CameraModel,
     commands: mpsc::Sender<Request>,
     events: broadcast::Sender<Event>,
     status: watch::Receiver<Option<CameraStatus>>,
@@ -124,6 +110,14 @@ pub struct Camera {
 
 impl Camera {
     pub async fn connect(device: &Device, options: ConnectOptions) -> Result<Self> {
+        if !matches!(
+            options.verification_mode,
+            VerificationMode::Automatic | VerificationMode::Required
+        ) {
+            return Err(Error::InvalidInput(
+                "connection verification mode must be Automatic or Required",
+            ));
+        }
         if options.verification_code > 9999 {
             return Err(Error::InvalidInput("verification code must be 0..9999"));
         }
@@ -263,8 +257,8 @@ impl Camera {
         if b.len() < 18 {
             return Err(Error::Malformed("version response"));
         }
-        let code = u16::from_le_bytes([b[0], b[1]]);
-        if code != 0 {
+        let code = ReturnCode::from_code(u16::from_le_bytes([b[0], b[1]]));
+        if code != ReturnCode::Success {
             return Err(Error::Camera(code));
         }
         Ok(Version {
@@ -284,7 +278,7 @@ impl Camera {
     }
 
     fn target_payload(&self, value: Option<u8>) -> Vec<u8> {
-        let mut b = self.device_id.to_le_bytes().to_vec();
+        let mut b = self.device_id.code().to_le_bytes().to_vec();
         if let Some(value) = value {
             b.push(value);
         }
@@ -294,38 +288,39 @@ impl Camera {
 
     /// Explicit start/stop, rather than toggling the shutter button.
     pub async fn start_recording(&self) -> Result<()> {
-        self.control([0x1d, 3], self.target_payload(Some(0))).await
+        self.record(RecordControl::Start).await
     }
     pub async fn stop_recording(&self) -> Result<()> {
-        self.control([0x1d, 3], self.target_payload(Some(1))).await
+        self.record(RecordControl::Stop).await
     }
-    pub async fn set_mode(&self, mode: u8) -> Result<()> {
-        self.control([0x1d, 4], self.target_payload(Some(mode)))
+    pub async fn record(&self, action: RecordControl) -> Result<()> {
+        self.control([0x1d, 3], self.target_payload(Some(action.checked_code()?)))
+            .await
+    }
+    pub async fn set_mode(&self, mode: CameraMode) -> Result<()> {
+        self.control([0x1d, 4], self.target_payload(Some(mode.checked_code()?)))
             .await
     }
     pub async fn reboot(&self) -> Result<()> {
         self.control([0, 0x16], self.target_payload(None)).await
     }
     pub async fn sleep(&self) -> Result<()> {
-        self.set_power_mode(3).await
+        self.set_power_mode(PowerMode::Sleep).await
     }
 
-    pub async fn set_power_mode(&self, mode: u8) -> Result<()> {
-        if mode != 0 && mode != 3 {
-            return Err(Error::InvalidInput("power mode must be 0 or 3"));
-        }
-        self.control([0, 0x1a], vec![mode]).await
+    pub async fn set_power_mode(&self, mode: PowerMode) -> Result<()> {
+        self.control([0, 0x1a], vec![mode.checked_code()?]).await
     }
 
     pub async fn key_event(&self, key: Key, event: KeyEvent) -> Result<()> {
-        let mut b = vec![key as u8, 1];
-        b.extend_from_slice(&(event as u16).to_le_bytes());
+        let mut b = vec![key.checked_code()?, KeyReportMode::Event.code()];
+        b.extend_from_slice(&event.checked_code()?.to_le_bytes());
         self.control([0, 0x11], b).await
     }
 
-    pub async fn key_state(&self, key: Key, pressed: bool) -> Result<()> {
-        let mut b = vec![key as u8, 0];
-        b.extend_from_slice(&u16::from(!pressed).to_le_bytes());
+    pub async fn key_state(&self, key: Key, state: KeyState) -> Result<()> {
+        let mut b = vec![key.checked_code()?, KeyReportMode::State.code()];
+        b.extend_from_slice(&state.checked_code()?.to_le_bytes());
         self.control([0, 0x11], b).await
     }
 
@@ -336,14 +331,22 @@ impl Camera {
         self.key_event(Key::Qs, KeyEvent::Short).await
     }
 
-    /// 0=off, 1=once, 2=periodic, 3=periodic plus changes; fixed 2Hz.
+    /// Subscribe using a named push mode; the protocol fixes the rate at 2Hz.
     /// State is delivered via events; an optional subscription ACK is ignored.
-    pub async fn subscribe_status(&self, mode: u8) -> Result<()> {
-        if mode > 3 {
-            return Err(Error::InvalidInput("status mode must be 0..3"));
-        }
-        self.command([0x1d, 5], vec![mode, 20, 0, 0, 0, 0], false)
-            .await?;
+    pub async fn subscribe_status(&self, mode: StatusPushMode) -> Result<()> {
+        self.command(
+            [0x1d, 5],
+            vec![
+                mode.checked_code()?,
+                StatusPushFrequency::Hz2.code(),
+                0,
+                0,
+                0,
+                0,
+            ],
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -378,20 +381,22 @@ impl Drop for Camera {
 
 fn check_code(payload: &[u8]) -> Result<()> {
     match payload.first() {
-        Some(0) => Ok(()),
-        Some(code) => Err(Error::Camera((*code).into())),
+        Some(code) => match ReturnCode::from_code((*code).into()) {
+            ReturnCode::Success => Ok(()),
+            code => Err(Error::Camera(code)),
+        },
         None => Err(Error::Malformed("command response")),
     }
 }
 
-async fn handshake(link: &mut Link, options: &ConnectOptions) -> Result<u32> {
+async fn handshake(link: &mut Link, options: &ConnectOptions) -> Result<CameraModel> {
     let mut payload = Vec::with_capacity(33);
     payload.extend_from_slice(&options.identity.device_id.to_le_bytes());
     payload.push(6);
     payload.extend_from_slice(&options.identity.address);
     payload.extend_from_slice(&[0; 10]);
     payload.extend_from_slice(&0u32.to_le_bytes()); // fw_version=0 disables accessory updates
-    payload.extend_from_slice(&[0, u8::from(options.first_pair)]);
+    payload.extend_from_slice(&[0, options.verification_mode.checked_code()?]);
     payload.extend_from_slice(&options.verification_code.to_le_bytes());
     payload.extend_from_slice(&[0; 4]);
     link.send(&Frame {
@@ -414,18 +419,27 @@ async fn handshake(link: &mut Link, options: &ConnectOptions) -> Result<u32> {
                 .payload
                 .get(4)
                 .ok_or(Error::Malformed("pairing response"))?;
-            if code != 0 {
-                return Err(Error::Camera(code.into()));
+            let code = ReturnCode::from_code(code.into());
+            if code != ReturnCode::Success {
+                return Err(Error::Camera(code));
             }
             continue;
         }
-        if frame.payload.len() < 33 || frame.payload[26] != 2 {
+        if frame.payload.len() < 33
+            || VerificationMode::from_code(frame.payload[26]) != VerificationMode::Result
+        {
             return Err(Error::Malformed("pairing confirmation"));
         }
-        if u16::from_le_bytes([frame.payload[27], frame.payload[28]]) != 0 {
-            return Err(Error::PairingRejected);
+        match VerificationResult::from_code(u16::from_le_bytes([
+            frame.payload[27],
+            frame.payload[28],
+        ])) {
+            VerificationResult::Allowed => {}
+            VerificationResult::Rejected => return Err(Error::PairingRejected),
+            VerificationResult::Unknown(_) => return Err(Error::Malformed("pairing result")),
         }
-        let device_id = u32::from_le_bytes(frame.payload[..4].try_into().unwrap());
+        let device_id =
+            CameraModel::from_code(u32::from_le_bytes(frame.payload[..4].try_into().unwrap()));
         let mut payload = options.identity.device_id.to_le_bytes().to_vec();
         payload.extend_from_slice(&[0; 5]); // success + single-camera index 0
         link.send(&Frame {
@@ -449,9 +463,9 @@ struct Worker {
     stop: oneshot::Receiver<()>,
     device: Device,
     options: ConnectOptions,
-    device_id: u32,
+    device_id: CameraModel,
     seq: u16,
-    subscription: Option<u8>,
+    subscription: Option<StatusPushMode>,
     gps_valid_from: Instant,
 }
 
@@ -475,7 +489,7 @@ impl Worker {
                 retries += 1;
                 let _ = self.events.send(Event::Reconnecting(retries));
                 let mut options = self.options.clone();
-                options.first_pair = false;
+                options.verification_mode = VerificationMode::Automatic;
                 let attempt = async {
                     let mut link = Link::open(&self.device).await?;
                     let result = timeout(Duration::from_secs(35), handshake(&mut link, &options))
@@ -505,7 +519,14 @@ impl Worker {
                                 kind: 0,
                                 seq: self.seq,
                                 command: [0x1d, 5],
-                                payload: vec![mode, 20, 0, 0, 0, 0],
+                                payload: vec![
+                                    mode.code(),
+                                    StatusPushFrequency::Hz2.code(),
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                ],
                             };
                             if let Err(error) = self.link.send(&frame).await {
                                 self.link.close().await;
@@ -579,8 +600,8 @@ impl Worker {
                         continue;
                     }
                     let seq = self.next_seq(&pending);
-                    let is_sleep = request.command == [0, 0x1a] && request.payload == [3];
-                    let subscription = if request.command == [0x1d, 5] { request.payload.first().copied() } else { None };
+                    let is_sleep = request.command == [0, 0x1a] && request.payload == [PowerMode::Sleep.code()];
+                    let subscription = if request.command == [0x1d, 5] { request.payload.first().copied().map(StatusPushMode::from_code) } else { None };
                     let frame = Frame { kind: if request.wait { 2 } else { 0 }, seq, command: request.command, payload: request.payload };
                     // Log explicit control requests and one-shot GPS, not the
                     // automatic status subscription or periodic GPS worker.
@@ -612,8 +633,8 @@ impl Worker {
                                 let _ = entry.reply.send(Ok(frame));
                             } else if !frame.is_ack() {
                                 let decoded = match frame.command {
-                                    [0x1d, 2] => CameraStatus::decode(&frame.payload).map(|s| {
-                                        sleeping |= s.power_mode == 3;
+                                    [0x1d, 2] => CameraStatus::decode(&frame.payload, self.device_id).map(|s| {
+                                        sleeping |= s.power_mode == PowerMode::Sleep;
                                         if sleeping { self.connection.send_replace(ConnectionState::Sleeping); }
                                         self.status.send_replace(Some(s.clone()));
                                         Event::Status(s)

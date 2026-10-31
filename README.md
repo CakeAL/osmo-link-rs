@@ -57,13 +57,13 @@ macOS 需允许运行 CLI 的终端使用蓝牙。独立应用需在 Info.plist 
 | 明确开始、停止拍录 | `start_recording`、`stop_recording` / `record start`、`record stop` |
 | 拍录键、QS | `shutter`、`quick_switch` / `shutter`、`qs` |
 | 任意公开按键事件及按下/松开 | `key_event`、`key_state` / `key ...` |
-| 模式切换 | `set_mode(u8)` / `mode video`、`mode photo`、`mode 0x0a` 等 |
+| 模式切换 | `set_mode(CameraMode)` / `mode video`、`mode photo`、`mode 0x0a` 等 |
 | GPS 单次、持续输入 | `send_gps`、`update_gps`、`stop_gps` / `gps once`、`gps replay`、`gps stop` |
 | 电源模式、重启 | `set_power_mode`、`sleep`、`reboot` / `sleep`、`reboot` |
 | 断开、连接状态 | `disconnect`、`connection_state`、`connections` / `disconnect` |
 
 状态支持 `1D02` 的完整字段，以及 `1D06` 的新模式名称、参数。
-模式值与其他功能受相机型号、固件支持范围限制；core 保留原始数值。
+模式值与其他功能受相机型号、固件支持范围限制；状态中未知的枚举值保留为 `Unknown(code)`。
 `shutter` 是按键切换；需要明确开始/停止时使用 `record start|stop`。
 拍录命令遵循当前拍摄模式，要录像先切换到视频模式。
 
@@ -119,7 +119,7 @@ gps stop
 
 ```rust,no_run
 use std::time::Duration;
-use osmo_core::{Camera, ConnectOptions, ControllerIdentity, Scanner};
+use osmo_core::{Camera, CameraMode, ConnectOptions, ControllerIdentity, Scanner, StatusPushMode};
 
 # async fn example() -> osmo_core::Result<()> {
 let scanner = Scanner::new().await?;
@@ -128,9 +128,9 @@ let devices = scanner.scan(Duration::from_secs(5)).await?;
 let identity = ControllerIdentity::default();
 if let Some(device) = devices.first() {
     let camera = Camera::connect(device, ConnectOptions::new(identity)).await?;
-    camera.subscribe_status(3).await?;
+    camera.subscribe_status(StatusPushMode::PeriodicAndChanges).await?;
     let _events = camera.events();
-    camera.set_mode(1).await?;
+    camera.set_mode(CameraMode::Video).await?;
     camera.start_recording().await?;
     // 定位服务回调：camera.update_gps(&sample)?;
     camera.stop_recording().await?;
@@ -143,6 +143,53 @@ if let Some(device) = devices.first() {
 core 使用宿主的 Tokio runtime。单个 worker 负责收发、CRC 和序列号应答关联。
 协议流解析支持拆包、多帧、CRC 错误后恢复；未公开/未知消息通过 `Event::Frame`
 保留。`Event::Warning` 报告不能解析的状态。
+
+## 协议枚举
+
+协议中的离散取值集中在 `crates/osmo-core/src/enums.rs`，同时从 `osmo_core` 根模块导出。
+
+| 协议内容 | core 类型 |
+| --- | --- |
+| 相机型号、返回码 | `CameraModel`、`ReturnCode` |
+| 鉴权模式、结果 | `VerificationMode`、`VerificationResult` |
+| 按键、上报方式、按下/松开、事件 | `Key`、`KeyReportMode`、`KeyState`、`KeyEvent` |
+| 拍录控制、状态订阅 | `RecordControl`、`StatusPushMode`、`StatusPushFrequency` |
+| 全部 17 个拍摄模式、工作状态 | `CameraMode`、`CameraState` |
+| 视频分辨率、两类相机照片尺寸、帧率 | `VideoResolution`、`ActionPhotoSize`、`Osmo360PhotoSize`、`FrameRate` |
+| 防抖、照片比例、自定义模式、电源、温度 | `EisMode`、`PhotoRatio`、`UserMode`、`PowerMode`、`TemperatureStatus` |
+| 拍照倒计时、循环录制时长、1D06 标签 | `PhotoCountdown`、`LoopRecordingDuration`、`ModeInfoType` |
+
+`code()` / `from_code()` 在枚举和协议数字之间转换，发送设置时拒绝 `Unknown`。
+`FrameRate::Fps200.code()` 是协议索引 **19**，实际帧率通过 `frames_per_second()` 获取。
+`UserMode` 的非法接收值按协议归一为 `General`。
+
+`CameraStatus.resolution` 使用 `CaptureFormat` 区分视频分辨率、Action 照片尺寸和
+Osmo 360 照片尺寸；`fps` 使用 `CaptureRate` 区分帧率、连拍数量和慢动作倍率。
+未知模式/型号的相关字段保留原始编码。计数、时间、容量、百分比和未定义的 FOV 保留字段仍用整数。
+枚举只表达协议取值，不代表增加了快门速度、分辨率等参数设置命令。
+
+API 调整：
+
+```rust,no_run
+# async fn settings(camera: &osmo_core::Camera) -> osmo_core::Result<()> {
+use osmo_core::{CameraMode, Key, KeyState, PowerMode, RecordControl, StatusPushMode};
+camera.set_mode(CameraMode::SuperNight).await?;
+camera.set_power_mode(PowerMode::Normal).await?;
+camera.subscribe_status(StatusPushMode::PeriodicAndChanges).await?;
+camera.key_state(Key::Shutter, KeyState::Pressed).await?;
+camera.key_state(Key::Shutter, KeyState::Released).await?;
+camera.record(RecordControl::Start).await?;
+# Ok(())
+# }
+```
+
+`ConnectOptions.first_pair` 改为 `verification_mode`，可设置 `VerificationMode::Required`
+或 `Automatic`；`Camera.device_id` 改为 `CameraModel`，数值使用 `.code()` 获取。
+`Error::Camera` 携带 `ReturnCode`；状态倒计时和循环时长字段分别改名为
+`photo_countdown`、`loop_duration`，并改为对应枚举。
+
+CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举；`help` 列出所有模式名称，
+包括 `supernight`、`panorama-video` 等。
 
 ## Android / iOS
 
@@ -168,7 +215,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-仅保留三个针对性测试：官方协议帧、GPS 单位/日期转换、模式切换应答兼容。
+五个针对性测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值及状态字段的模式/机型解释。
 CLI 默认显示主动控制命令发送的 DATA 数据段，以及按序列号和命令号匹配到的应答 DATA：
 
 ```text

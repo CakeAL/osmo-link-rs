@@ -1,4 +1,4 @@
-use crate::protocol::ProtocolError;
+use crate::{ReturnCode, protocol::ProtocolError};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -28,8 +28,8 @@ pub enum Error {
     PairingRejected,
     #[error("malformed {0}")]
     Malformed(&'static str),
-    #[error("camera returned code {0:#04x}")]
-    Camera(u16),
+    #[error("camera returned {0} (code {code:#04x})", code = .0.code())]
+    Camera(ReturnCode),
     #[error("invalid input: {0}")]
     InvalidInput(&'static str),
 }

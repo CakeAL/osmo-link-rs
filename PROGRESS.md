@@ -119,3 +119,23 @@ Removed the Action 4 device-ID restriction at the user's request. Any model's
 requires an ACK with the exact pending sequence, and nonzero response codes remain
 errors. Updated the existing focused compatibility test and current documentation;
 this changes the supported rule without claiming new hardware coverage.
+
+## Follow-up: typed protocol enums
+
+Added 25 named-value enums from the DATA protocol document in `enums.rs`, exported
+from the core root, plus context-aware CaptureFormat/CaptureRate enums. Coverage
+includes models, return/verification codes, key modes/states/events, recording,
+subscription, all 17 camera modes, state, resolution/photo sizes, FPS indices,
+stabilization, aspect ratio, user/power/temperature modes, countdown/loop presets,
+and new-status tags. No ID was invented for the unsupported Osmo Nano.
+
+Changed settings APIs and the CLI to pass enums. State decoding distinguishes
+photo sizes by camera model and FPS/burst/slow-motion meanings by mode. Unknown
+received values retain their codes, except invalid user modes normalize to General
+as documented; unknown outgoing settings are rejected. Continuous measurements
+and reserved FOV data remain integers. Preserved the user's supernight CLI alias.
+
+Updated examples and documented API migrations (including typed model/error values,
+verification mode, and countdown/loop field names). Five focused tests and strict
+Clippy pass; aarch64 iOS/Android core checks and CLI help pass. No hardware control
+was performed for this type/API refactor.

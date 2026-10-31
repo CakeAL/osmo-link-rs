@@ -1,85 +1,83 @@
-use crate::{Error, Result};
+use crate::{
+    CameraMode, CameraModel, CameraState, CaptureFormat, CaptureRate, EisMode, Error,
+    LoopRecordingDuration, ModeInfoType, PhotoCountdown, PhotoRatio, PowerMode, Result,
+    TemperatureStatus, UserMode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CameraStatus {
-    pub mode: u8,
-    // 相机模式：0x00 - 慢动作，0x01 - 视频，0x02 - 静止延时，0x05 - 拍照，0x0A - 运动延时，0x1A - 直播，0x23 - UVC直播，0x28 - 低光视频（超级夜景），0x34 - 人物跟随，其它值 - 使用新协议（参考新相机状态推送1D06）
-    pub state: u8,
-    // 相机状态：0x00 - 屏幕关闭，0x01 - 直播（包括亮屏未录制），0x02 - 回放，0x03 - 拍照或录像中，0x05 - 预录制中
-    pub resolution: u8,
-    // 视频分辨率：10 - 1080P，16 - 4K 16:9，45 - 2.7K 16:9，66 - 1080P 9:16，67 - 2.7K 9:16，95 - 2.7K 4:3，103 - 4K 4:3，109 - 4K 9:16；拍照画幅（Osmo Action）：4 - L，3 - M；拍照画幅（Osmo 360）：4 - Ultra Wide 30MP，3 - Wide 20MP，2 - Standard 12MP
-    pub fps: u8,
-    // 帧率：1 - 24fps，2 - 25fps，3 - 30fps，4 - 48fps，5 - 50fps，6 - 60fps，10 - 100fps，7 - 120fps，19 - 200fps，8 - 240fps；慢动作模式时：倍率 = 帧率/30；拍照模式时：连拍数（1 - 普通拍照只拍一张，>1 - 连拍张数）
-    pub eis: u8,
-    // 电子防抖模式：0 - 关闭，1 - RS，2 - HS，3 - RS+，4 - HB
+    /// 当前拍摄模式；未知的新固件取值保留在 Unknown 中。
+    pub mode: CameraMode,
+    /// 相机工作状态，Capturing 同时用于拍照和录像。
+    pub state: CameraState,
+    /// 视频分辨率或照片尺寸，由模式和相机型号决定。
+    pub resolution: CaptureFormat,
+    /// 帧率索引、慢动作倍率或连拍张数，由模式决定。
+    pub fps: CaptureRate,
+    /// 电子防抖模式。
+    pub eis: EisMode,
+    /// 录像时间（含预录制），单位秒；连拍时为连拍时限，单位毫秒。
     pub record_seconds: u16,
-    // 当前录像时间（包括预录制时长），单位：秒；连拍状态下：连拍时限，单位：毫秒
+    /// FOV 保留字段，文档没有定义枚举值。
     pub fov: u8,
-    // FOV类型，保留字段
-    pub photo_ratio: u8,
-    // 照片比例：0 - 4:3，1 - 16:9
+    pub photo_ratio: PhotoRatio,
+    /// 实时倒计时，单位秒。
     pub countdown_seconds: u16,
-    // 实时倒计时，单位：秒
+    /// 静止延时间隔，单位 0.1 秒；运动延时为拍摄速率，0 为 Auto。
     pub timelapse_interval: u16,
-    // 静止延时摄影模式下：拍摄时间间隔，单位：0.1秒（例如间隔0.5秒时值为5）；运动延时摄影模式下：拍摄速率（Auto选项下值为0）
+    /// 延时录像时长，单位秒。
     pub timelapse_duration: u16,
-    // 延时录像时长，单位：秒
+    /// SD 卡剩余容量，单位 MB。
     pub remaining_mb: u32,
-    // SD卡剩余容量，单位：MB
     pub remaining_photos: u32,
-    // 剩余拍照张数
     pub remaining_seconds: u32,
-    // 剩余录像时间，单位：秒
-    pub user_mode: u8,
-    // 用户模式（非法值按0处理）：0 - 通用模式，1 - 自定义模式1，2 - 自定义模式2，3 - 自定义模式3，4 - 自定义模式4，5 - 自定义模式5
-    pub power_mode: u8,
-    // 电源模式：0 - 正常工作模式，3 - 休眠模式
-    pub next_mode: u8,
-    // 预切换标志：在预切换（例如QS）模式下，仅显示模式名称和图标，不展示具体参数。表示即将切换的目标模式；若当前不处于预切换模式，则该字段表示当前模式，与camera_mode保持一致
-    pub temperature_warning: u8,
-    // 相机发生了错误：0 - 温度正常，1 - 温度警告（可以录制但温度比较高），2 - 温度高（不可以录制），3 - 温度过高（要关机了）
-    pub photo_countdown_ms: u32,
-    // 拍照倒计时参数，单位：毫秒（遥控器转换为0.5s，1s，2s，3s，5s，10s几个档显示）
-    pub loop_seconds: u16,
-    // 循环录像时长，单位：秒（遥控器转为off，max，5m，20m，1h几档显示，其中off=0，max=65535）
+    /// 非法值按文档规定归一为 General。
+    pub user_mode: UserMode,
+    pub power_mode: PowerMode,
+    /// QS 预切换目标模式，否则与当前 mode 相同。
+    pub next_mode: CameraMode,
+    pub temperature_warning: TemperatureStatus,
+    pub photo_countdown: PhotoCountdown,
+    pub loop_duration: LoopRecordingDuration,
+    /// 电池电量百分比，0..100，不是枚举。
     pub battery_percent: u8,
-    // 相机电池电量：0~100%
 }
 
 impl CameraStatus {
-    pub(crate) fn decode(b: &[u8]) -> Result<Self> {
+    pub(crate) fn decode(b: &[u8], model: CameraModel) -> Result<Self> {
         if b.len() < 38 {
             return Err(Error::Malformed("camera status"));
         }
         let u16_at = |i| u16::from_le_bytes(b[i..i + 2].try_into().unwrap());
         let u32_at = |i| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+        let mode = CameraMode::from_code(b[0]);
         Ok(Self {
-            mode: b[0],
-            state: b[1],
-            resolution: b[2],
-            fps: b[3],
-            eis: b[4],
+            mode,
+            state: CameraState::from_code(b[1]),
+            resolution: CaptureFormat::from_code(mode, model, b[2]),
+            fps: CaptureRate::from_code(mode, b[3]),
+            eis: EisMode::from_code(b[4]),
             record_seconds: u16_at(5),
             fov: b[7],
-            photo_ratio: b[8],
+            photo_ratio: PhotoRatio::from_code(b[8]),
             countdown_seconds: u16_at(9),
             timelapse_interval: u16_at(11),
             timelapse_duration: u16_at(13),
             remaining_mb: u32_at(15),
             remaining_photos: u32_at(19),
             remaining_seconds: u32_at(23),
-            user_mode: b[27],
-            power_mode: b[28],
-            next_mode: b[29],
-            temperature_warning: b[30],
-            photo_countdown_ms: u32_at(31),
-            loop_seconds: u16_at(35),
+            user_mode: UserMode::from_code(b[27]).normalized(),
+            power_mode: PowerMode::from_code(b[28]),
+            next_mode: CameraMode::from_code(b[29]),
+            temperature_warning: TemperatureStatus::from_code(b[30]),
+            photo_countdown: PhotoCountdown::from_code(u32_at(31)),
+            loop_duration: LoopRecordingDuration::from_code(u16_at(35)),
             battery_percent: b[37],
         })
     }
 
     pub fn is_capturing(&self) -> bool {
-        self.state == 3
+        self.state == CameraState::Capturing
     }
 }
 
@@ -91,7 +89,12 @@ pub struct ModeInfo {
 
 impl ModeInfo {
     pub(crate) fn decode(b: &[u8]) -> Result<Self> {
-        if b.len() < 46 || b[0] != 1 || b[23] != 2 || b[1] > 20 || b[24] > 20 {
+        if b.len() < 46
+            || ModeInfoType::from_code(b[0]) != ModeInfoType::Name
+            || ModeInfoType::from_code(b[23]) != ModeInfoType::Parameters
+            || b[1] > 20
+            || b[24] > 20
+        {
             return Err(Error::Malformed("mode information"));
         }
         Ok(Self {
@@ -102,5 +105,64 @@ impl ModeInfo {
                 .trim_end_matches('\0')
                 .into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ActionPhotoSize, FrameRate, Osmo360PhotoSize, VideoResolution};
+
+    #[test]
+    fn status_interprets_fields_by_mode_and_model() {
+        let mut b = [0; 38];
+        b[0] = CameraMode::Photo.code();
+        b[1] = CameraState::Capturing.code();
+        b[2] = 3;
+        b[3] = 1;
+        b[27] = 99;
+        b[28] = PowerMode::Sleep.code();
+        b[30] = TemperatureStatus::TooHotToRecord.code();
+        b[31..35].copy_from_slice(&500u32.to_le_bytes());
+        b[35..37].copy_from_slice(&65535u16.to_le_bytes());
+        let action = CameraStatus::decode(&b, CameraModel::Action4).unwrap();
+        let panorama = CameraStatus::decode(&b, CameraModel::Osmo360).unwrap();
+        assert_eq!(
+            action.resolution,
+            CaptureFormat::ActionPhoto(ActionPhotoSize::Medium)
+        );
+        assert_eq!(
+            panorama.resolution,
+            CaptureFormat::Osmo360Photo(Osmo360PhotoSize::Wide20Mp)
+        );
+        assert_eq!(action.fps, CaptureRate::BurstCount(1));
+        assert_eq!(action.photo_countdown, PhotoCountdown::HalfSecond);
+        assert_eq!(action.loop_duration, LoopRecordingDuration::Max);
+        assert_eq!(action.user_mode, UserMode::General);
+        assert_eq!(action.power_mode, PowerMode::Sleep);
+        assert!(action.is_capturing());
+
+        b[0] = CameraMode::Video.code();
+        b[2] = VideoResolution::K4Ratio16x9.code();
+        let video = CameraStatus::decode(&b, CameraModel::Action4).unwrap();
+        assert_eq!(
+            video.resolution,
+            CaptureFormat::Video(VideoResolution::K4Ratio16x9)
+        );
+        assert_eq!(video.fps, CaptureRate::Video(FrameRate::Fps24));
+        b[0] = CameraMode::SlowMotion.code();
+        assert_eq!(
+            CameraStatus::decode(&b, CameraModel::Action4).unwrap().fps,
+            CaptureRate::SlowMotionMultiplier(1)
+        );
+
+        b[0] = 0xe7;
+        b[1] = 0xe8;
+        let future = CameraStatus::decode(&b, CameraModel::Unknown(0xff77)).unwrap();
+        assert_eq!(future.mode, CameraMode::Unknown(0xe7));
+        assert_eq!(future.state, CameraState::Unknown(0xe8));
+        assert_eq!(future.resolution.code(), b[2]);
+        assert_eq!(future.fps.code(), b[3]);
+        assert!(CameraStatus::decode(&b[..37], CameraModel::Action4).is_err());
     }
 }
