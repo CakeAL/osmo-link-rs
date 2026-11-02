@@ -60,7 +60,7 @@ ACK 完成；其他命令仍严格匹配，返回码单独校验。
 ## 编译与基础检查
 
 - `cargo fmt --all --check`：通过。
-- `cargo test --workspace`：三个针对性测试通过。
+- `cargo test --workspace`：五个针对性测试通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
 
 - `cargo check -p osmo-core --target aarch64-apple-ios`：通过。
