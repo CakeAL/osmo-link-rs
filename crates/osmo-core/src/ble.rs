@@ -142,6 +142,30 @@ impl Scanner {
     }
 }
 
+/// Android's GATT stack often reports status 128 (GATT_ERROR) for the first
+/// CCCD write right after service discovery; a short retry is the usual fix.
+/// A persistent failure is returned as the original backend error.
+async fn subscribe_with_retry(
+    peripheral: &Peripheral,
+    characteristic: &Characteristic,
+) -> Result<()> {
+    let mut last_error = None;
+    for attempt in 0..3u64 {
+        match peripheral.subscribe(characteristic).await {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < 2 {
+                    sleep(Duration::from_millis(300 * (attempt + 1))).await;
+                }
+            }
+        }
+    }
+    Err(last_error
+        .map(Error::Bluetooth)
+        .unwrap_or(Error::MissingCharacteristics))
+}
+
 pub(crate) struct Link {
     pub peripheral: Peripheral,
     write: Characteristic,
@@ -154,7 +178,7 @@ pub(crate) struct Link {
 impl Link {
     pub async fn open(device: &Device) -> Result<Self> {
         let peripheral = device.peripheral.clone();
-        let result = timeout(Duration::from_secs(15), async {
+        let result = timeout(Duration::from_secs(20), async {
             peripheral.connect().await?;
             peripheral.discover_services().await?;
             let characteristics = peripheral.characteristics();
@@ -178,7 +202,7 @@ impl Link {
                 return Err(Error::MissingCharacteristics);
             };
             let notifications = peripheral.notifications().await?;
-            peripheral.subscribe(notify).await?;
+            subscribe_with_retry(&peripheral, notify).await?;
             Ok(Self {
                 peripheral: peripheral.clone(),
                 write,

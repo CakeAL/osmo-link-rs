@@ -178,3 +178,14 @@ permission denied (SecurityException or a message containing "permission"). Adde
 test for the mapping; six focused tests, fmt and strict Clippy pass, and the Android
 cdylib builds. Interactive emulator validation was blocked by host load (SystemUI ANR),
 so the fix still needs confirmation on the Xiaomi 15.
+
+## Fix: Android CCCD writes failing with GATT status 128
+
+On a Xiaomi 15 the first connect died while enabling notifications:
+"Unable to write client characteristic configuration descriptor, status: 128"
+(GATT_ERROR). The GATT stack frequently rejects the first CCCD write right after
+service discovery and MTU negotiation. `Link::open` now retries the subscription up
+to three times with 300/600ms backoff, and `Camera::connect` retries the whole GATT
+session once after a 600ms pause when the failure is a CCCD write. The BLE open
+timeout grew from 15s to 20s to cover retries. Six focused tests, fmt and strict
+Clippy pass; the behaviour still needs confirmation on the phone.

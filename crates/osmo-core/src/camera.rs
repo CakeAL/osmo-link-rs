@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt, time::Duration};
 use btleplug::api::Peripheral as _;
 use tokio::{
     sync::{broadcast, mpsc, oneshot, watch},
-    time::{Instant, interval, timeout},
+    time::{Instant, interval, sleep, timeout},
 };
 
 use crate::{
@@ -126,7 +126,7 @@ impl Camera {
         {
             return Err(Error::InvalidInput("GPS interval must be 100ms..1s"));
         }
-        let mut link = Link::open(device).await?;
+        let mut link = open_link(device).await?;
         let result = timeout(Duration::from_secs(35), handshake(&mut link, &options))
             .await
             .unwrap_or(Err(Error::Timeout("DJI pairing")));
@@ -377,6 +377,28 @@ impl Drop for Camera {
             let _ = shutdown.send(());
         }
     }
+}
+
+/// Retry the whole GATT session once when Android rejected the CCCD write.
+/// Its first connection often leaves the GATT cache/state unusable, while a
+/// fresh connection succeeds.
+async fn open_link(device: &Device) -> Result<Link> {
+    match Link::open(device).await {
+        Ok(link) => Ok(link),
+        Err(error) if is_cccd_failure(&error) => {
+            sleep(Duration::from_millis(600)).await;
+            Link::open(device).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn is_cccd_failure(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Bluetooth(btleplug::Error::RuntimeError(message))
+            if message.contains("client characteristic configuration descriptor")
+    )
 }
 
 fn check_code(payload: &[u8]) -> Result<()> {
