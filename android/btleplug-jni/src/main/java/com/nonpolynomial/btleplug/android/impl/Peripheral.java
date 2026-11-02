@@ -8,6 +8,8 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothStatusCodes;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -392,16 +394,32 @@ class Peripheral {
                     }
 
                     BluetoothGattDescriptor descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIGURATION_DESCRIPTOR);
+                    int properties = characteristic.getProperties();
                     byte[] cccdValue;
                     if (!enable) {
                         cccdValue = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
-                    } else if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
+                    } else if ((properties & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                        // Prefer notifications when the peripheral advertises both
+                        // bits; some cameras reject indications with status 128.
+                        cccdValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
+                    } else if ((properties & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
                         cccdValue = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE;
                     } else {
                         cccdValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
                     }
+                    Log.d(TAG, "CCCD write uuid=" + uuid + " properties=0x"
+                            + Integer.toHexString(properties) + " value=" + cccdValue[0]);
                     descriptor.setValue(cccdValue);
-                    if (!this.gatt.writeDescriptor(descriptor)) {
+                    // API 33+ requires the value-carrying overload on some OEM stacks;
+                    // it returns a status code instead of a boolean.
+                    boolean queued;
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        queued = this.gatt.writeDescriptor(descriptor, cccdValue)
+                                == BluetoothStatusCodes.SUCCESS;
+                    } else {
+                        queued = this.gatt.writeDescriptor(descriptor);
+                    }
+                    if (!queued) {
                         throw new RuntimeException("Unable to write client characteristic configuration descriptor");
                     }
 
