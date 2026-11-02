@@ -484,6 +484,8 @@ private fun ModePicker(state: UiState, onSelect: (Int) -> Unit) {
 @Composable
 private fun StatusDetails(state: UiState) {
     val status = state.status
+    // Photo-like modes show remaining shots; everything else records video.
+    val photoMode = status.modeName in PHOTO_MODES
     Surface(
         color = OsmoSurface,
         shape = RoundedCornerShape(16.dp),
@@ -505,8 +507,13 @@ private fun StatusDetails(state: UiState) {
                     modifier = Modifier.weight(1f),
                 )
                 StatBlock(
-                    label = "剩余照片",
-                    value = if (status.hasData) "${status.remainingPhotos}" else "—",
+                    label = if (photoMode) "剩余照片" else "剩余时长",
+                    value = when {
+                        !status.hasData -> "—"
+                        photoMode -> "${status.remainingPhotos}"
+                        status.remainingSeconds > 0 -> formatRemainingDuration(status.remainingSeconds)
+                        else -> "—"
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 StatBlock(
@@ -791,17 +798,6 @@ private fun batteryColor(percent: Int): Color = when {
     percent <= 15 -> OsmoRed
     percent <= 40 -> OsmoAmber
     else -> OsmoGreen
-}
-
-private fun formatDuration(seconds: Int): String {
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, secs)
-    } else {
-        "%02d:%02d".format(minutes, secs)
-    }
 }
 
 private fun rssiLabel(rssi: Int?): String = rssi?.let { "$it dBm" } ?: "—"

@@ -189,3 +189,10 @@ to three times with 300/600ms backoff, and `Camera::connect` retries the whole G
 session once after a 600ms pause when the failure is a CCCD write. The BLE open
 timeout grew from 15s to 20s to cover retries. Six focused tests, fmt and strict
 Clippy pass; the behaviour still needs confirmation on the phone.
+
+## Android: remaining duration in video modes
+
+Video-like modes (everything except Photo, PanoramicPhoto and SubjectTracking) now show
+the remaining recordable time (`1h 02m`) in the status card instead of the remaining shot
+count; photo modes keep showing shots. Duration formatting moved to `Formatters.kt` with
+JVM unit tests covering both the recording clock and the remaining-time label.
