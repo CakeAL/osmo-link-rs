@@ -1,2 +1,4 @@
 /target
 .DS_Store
+.tools/
+android/app/src/main/jniLibs/

@@ -59,7 +59,7 @@ impl Scanner {
             }
             CentralState::Unknown => {
                 return Err(Error::AdapterNotReady(
-                    "check Bluetooth permission for the terminal running this CLI; the adapter may also be initializing or resetting",
+                    "check Bluetooth permission for this app; the adapter may also be initializing or resetting",
                 ));
             }
         }
