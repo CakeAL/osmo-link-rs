@@ -1,7 +1,7 @@
 # osmo-link-rs
 
-最小 Rust Osmo 蓝牙遥控 core，以及用于 macOS 真机调试的 CLI。
-一个 Cargo workspace，两个 crate：`osmo-core`、`macos-cli`。
+最小 Rust Osmo 蓝牙遥控 core、macOS 真机调试 CLI，以及 Android 原生 App。
+一个 Cargo workspace，三个 crate：`osmo-core`、`macos-cli`、`android-bridge`。
 
 ## macOS 运行
 
@@ -191,21 +191,34 @@ camera.record(RecordControl::Start).await?;
 CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举；`help` 列出所有模式名称，
 包括 `supernight`、`panorama-video` 等。
 
-## Android / iOS
+## Android
 
-core 没有 macOS 专属业务代码，BLE 后端由 btleplug 选择。本阶段不包含手机 App
-或 Swift/Kotlin FFI；移动端应用仍需原生外壳。
+原生 Compose 应用位于 [android](android)，Rust core 以 JNI 共享库接入：
 
-- iOS：原生应用负责蓝牙和定位权限，链接 Rust 库并提供 Tokio 生命周期。
-- Android：原生应用负责 Nearby devices/定位等所需权限；先按 btleplug 0.13.5
-  的 Java/JNI 初始化要求调用 `osmo_core::init_android`，再启动扫描。
-- 安装对应 Rust target 后可做 core 编译检查，例如
-  `cargo check -p osmo-core --target aarch64-apple-ios`、
-  `cargo check -p osmo-core --target aarch64-linux-android`。
-  这些命令不代表已经生成可安装 App。
+- `crates/android-bridge`：JNI 层（cdylib `libosmo_bridge.so`），扫描、连接、命令与事件。
+- `android/app`：Kotlin 单页深色 HUD，含权限、配对与 GPS 注入。
+- `android/btleplug-jni`：内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR）。
 
-移动端编译/运行结果详见 [验证记录](docs/macos-validation.md)，不以 macOS 测试
-代替手机验证。[btleplug 平台接入文档](https://docs.rs/btleplug/0.13.5/btleplug/)。
+构建需要 `aarch64-linux-android` target、Android NDK 29 与 cargo-ndk：
+
+```sh
+rustup target add aarch64-linux-android
+cargo install cargo-ndk
+cd android && ./gradlew :app:assembleDebug
+```
+
+Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
+`-PskipRust=true` 可只编译 Kotlin。NDK 默认查找 `.tools/android-ndk`，
+也可用 `ANDROID_NDK_HOME` 指定。
+
+首次运行授予「附近设备/位置」权限，唤醒相机并开启无线连接后搜索；
+首次配对需在相机屏幕确认 4 位配对码。定位开关按 100ms 目标间隔发送手机定位，
+实际频率由系统定位决定。
+
+详细结构、约束与排错见 [Android 文档](docs/android.md)。
+iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-apple-ios`
+做类型检查；JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android`
+检查。[btleplug 平台接入文档](https://docs.rs/btleplug/0.13.5/btleplug/)。
 
 ## 开发检查
 
@@ -213,6 +226,7 @@ core 没有 macOS 专属业务代码，BLE 后端由 btleplug 选择。本阶段
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cd android && ./gradlew :app:assembleDebug   # Android；Gradle 会顺带构建 Rust
 ```
 
 五个针对性测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值及状态字段的模式/机型解释。

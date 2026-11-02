@@ -61,3 +61,14 @@ The source code of esp-idf is available at: https://github.com/espressif/esp-idf
 
 ********************************************************************************************************
 ```
+
+## btleplug Android JNI support classes
+
+`android/btleplug-jni/src/main/java` is copied unmodified from btleplug 0.13.5
+(`src/droidplug/java/src/main/java`). btleplug is dual/triple licensed under MIT,
+Apache-2.0, and BSD-3-Clause; see the crate's `LICENSE-*` files at
+https://github.com/deviceplug/btleplug.
+
+The upstream Java project includes vendored JNI utility classes
+(`io.github.gedgygedgy.rust.*`) covered by the same upstream licensing. These classes
+are referenced only from native code, which is why the app keeps them through R8.

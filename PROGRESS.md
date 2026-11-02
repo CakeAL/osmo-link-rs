@@ -139,3 +139,28 @@ Updated examples and documented API migrations (including typed model/error valu
 verification mode, and countdown/loop field names). Five focused tests and strict
 Clippy pass; aarch64 iOS/Android core checks and CLI help pass. No hardware control
 was performed for this type/API refactor.
+
+## Android port: JNI bridge and Compose HUD
+
+Added `crates/android-bridge` as a JNI cdylib: it owns a Tokio runtime, wraps
+scan/connect/version/record/shutter/mode and synchronous GPS updates, persists the
+controller identity in the app files directory, and pushes JSON events to Kotlin through
+`BridgeListener`. `btleplug::platform::init` runs inside the Java-called `nativeInit`;
+failed scans always emit a terminal `devices` event so the UI cannot stay stuck, and
+panicked scan tasks are converted into an error event. Host and aarch64-linux-android
+checks pass. The adapter-not-ready message no longer says "terminal running this CLI",
+since the same core now runs in the app.
+
+Vendored btleplug 0.13.5's Android Java support classes as the `:btleplug-jni` Gradle
+module (upstream publishes no AAR) and added the Compose app: a single-activity dark HUD
+with scan/connect, pairing dialog, mode chips, record/shutter controls, status cards, and
+a `LocationManager` GPS injector sending `GpsSample` JSON at a requested 100ms interval.
+Permissions are requested per feature; release keeps btleplug and JNI classes through R8
+rules. Gradle builds the native library with `scripts/build-android.sh` (cargo-ndk and
+NDK 29) before packaging; `-PskipRust` skips it.
+
+Verified: debug APK builds, installs and launches on an arm64 API 37 emulator; connect
+screen, scanning state and the adapter-not-ready error path render; release APK builds
+with R8 and still contains `libosmo_bridge.so` and the btleplug classes. No phone or
+camera was used: the emulator has no usable BLE adapter, so pairing, recording, real
+scanning and GPS embedding in footage are not claimed.

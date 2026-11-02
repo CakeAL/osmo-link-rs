@@ -5,13 +5,14 @@
 ## 项目是什么
 
 `osmo-link-rs` 是一个最小化的 Rust 库，用公开的 DJI R SDK BLE 协议遥控 Osmo 相机
-（Action 4 为已验证机型），外加一个用于 macOS 真机调试的交互式 CLI。
+（Action 4 为已验证机型），外加 macOS 调试 CLI 和 Android 原生 App。
 
-- 一个 Cargo workspace（resolver 3，edition 2024），两个 crate：
-  - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无 macOS 专属业务代码。**
+- 一个 Cargo workspace（resolver 3，edition 2024），三个 crate：
+  - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无平台专属业务代码。**
   - `macos-cli`（[crates/macos-cli](crates/macos-cli)）：命令行外壳、配对身份持久化、GPS 回放。
-- `android/`（[android](android)）是独立的 Gradle/Compose 工程，**当前只是模板壳**：
-  没有 BLE 权限、没有 JNI/UniFFI 桥、没有调用 `osmo-core`。不要宣称移动端已可用。
+  - `android-bridge`（[crates/android-bridge](crates/android-bridge)）：JNI cdylib，向 Kotlin 暴露异步 JSON 事件。
+- `android/`（[android](android)）是独立 Gradle 工程：`:app`（Compose HUD）、
+  `:btleplug-jni`（内置的 btleplug Java 支持类）。原生库由 cargo-ndk 构建。
 
 ## 常用命令
 
@@ -24,7 +25,10 @@ cargo fmt --all                        # 格式化（无 rustfmt.toml，用默�
 cargo test --workspace                 # 5 个针对性测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
-cargo check -p osmo-core --target aarch64-linux-android
+cargo check -p android-bridge --target aarch64-linux-android
+
+cd android && ./gradlew :app:assembleDebug   # 先构建 Rust，再打包 APK
+cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 ```
 
 `RUST_LOG` 默认过滤为 `warn,osmo_core::commands=info`；`RUST_LOG=warn` 关闭命令 DATA，
@@ -42,12 +46,15 @@ cargo check -p osmo-core --target aarch64-linux-android
 | [gps.rs](crates/osmo-core/src/gps.rs) | `GpsSample` 校验与 48 字节编码、UTC+8 转换 |
 | [error.rs](crates/osmo-core/src/error.rs) | `Error`/`Result` |
 | [macos-cli/src/main.rs](crates/macos-cli/src/main.rs) | 命令解析、事件循环、`controller.json`、JSONL 回放 |
+| [android-bridge/src/lib.rs](crates/android-bridge/src/lib.rs) | JNI 入口、JVM 回调、扫描/连接/命令/GPS 转发 |
+| [android-bridge/src/status.rs](crates/android-bridge/src/status.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
+| [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、ViewModel、权限、`GpsTracker` |
 | [docs/macos-validation.md](docs/macos-validation.md) | 真机证据与**未**验证范围 |
 | [PROGRESS.md](PROGRESS.md) | 按步骤追加的实现日志（英文） |
 
 任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；命令语义与重连 →
-`camera.rs`；状态字段含义 → `status.rs` + `enums.rs`；定位编码 → `gps.rs`；交互体验 →
-`macos-cli/src/main.rs`。
+`camera.rs`；状态字段含义 → `status.rs` + `enums.rs`；定位编码 → `gps.rs`；CLI 交互 →
+`macos-cli/src/main.rs`；Android 界面 → `android/app`；JNI 接口 → `android-bridge`。
 
 ## 架构约束
 
@@ -111,7 +118,8 @@ cargo check -p osmo-core --target aarch64-linux-android
 
 ## 验证与文档纪律
 
-- 本地可验证：fmt、5 个单元测试、clippy、两个交叉 target 的 `cargo check`。
+- 本地可验证：fmt、5 个单元测试、clippy、两个交叉 target 的 `cargo check`、
+  `./gradlew :app:assembleDebug`（含 R8 的 release 也应能构建）。
 - 硬件相关（扫描、配对、录制、休眠、GPS 落盘）**必须真机验证**；不跑硬件就不要在文档里
   写"已验证"。新增未验证能力时，同步更新 [docs/macos-validation.md](docs/macos-validation.md)
   的"未验证的范围"。
@@ -129,20 +137,30 @@ cargo check -p osmo-core --target aarch64-linux-android
 - 不读取、不伪造宿主蓝牙 MAC；控制器身份是应用生成的 DJI 协议身份，
   默认存于 `~/Library/Application Support/osmo-link-rs/controller.json`（`OSMO_STATE_DIR` 可覆盖）。
   写入用临时文件 + rename 保持原子性。
-- 不提交生成物：`target/`、`android/app/build/`、`android/local.properties`、`.DS_Store`。
+- 不提交生成物：`target/`、`android/app/build/`、`android/app/src/main/jniLibs/`、
+  `.tools/`、`android/local.properties`、`.DS_Store`。
   `android/.idea/` 目前被跟踪，改动机器相关文件时不要顺带提交无关差异。
 
-## Android 现状（改动前先确认）
+## Android
 
 - Gradle 工程在 [android](android)，**不在** Cargo workspace 内；不会随 `cargo test` 构建。
 - 关键版本：AGP 9.5.0、Kotlin 2.2.10、Compose BOM 2026.02.01、minSdk 29、target 37，
   namespace/applicationId 为 `com.cakeal.osmolink`。
-- [MainActivity.kt](android/app/src/main/java/com/cakeal/osmolink/MainActivity.kt) 仍是
-  `Greeting` 模板；[AndroidManifest.xml](android/app/src/main/AndroidManifest.xml) **没有**
-  蓝牙或定位权限。
-- 将来接入时的硬要求：manifest 声明 `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`（及定位）；
-  在启动扫描前于应用线程调用 `osmo_core::init_android`（btleplug 的 Java/JNI 初始化）；
-  自行管理 Tokio 生命周期与权限请求；FFI 层尚不存在，需要自行设计（UniFFI/JNI）。
+- 模块：`:app`（UI/ViewModel/GPS/权限）、`:btleplug-jni`（上游 Java 类，**不要修改**，
+  升级时随 btleplug 版本整体替换）。
+- 原生库：`crates/android-bridge` 生成 `libosmo_bridge.so`；Gradle `preBuild` 调
+  [scripts/build-android.sh](scripts/build-android.sh)。NDK 默认 `.tools/android-ndk`，
+  可用 `ANDROID_NDK_HOME` 覆盖；`-PskipRust=true` 跳过 Rust。
+- JNI 约定：Kotlin [OsmoNative.kt](android/app/src/main/java/com/cakeal/osmolink/bridge/OsmoNative.kt)
+  的 `external fun` 必须与 `Java_com_cakeal_osmolink_bridge_OsmoNative_*` 一一对应；
+  `jni` crate 版本必须与 btleplug 一致（0.22），否则 `Env` 类型不兼容。
+- `btleplug::platform::init` 必须在 Java 线程调用（现位于 `nativeInit`）；
+  它依赖内置的 `com.nonpolynomial.**` 与 `io.github.gedgygedgy.**` 类。
+- 事件协议：`onEvent(type, json)`。新增事件类型时同步 Kotlin `ControllerViewModel.onEvent`，
+  未识别类型会被静默忽略。
+- release 启用 R8，`app/src/main/keepRules/rules.keep` 负责保留 btleplug 与 JNI 类；
+  新增 JNI 类或回调接口时同步更新该文件。
+- 模拟器没有可用 BLE 适配器，只能验证 UI 与错误路径；扫描/配对/录制必须真机验证。
 
 ## 提交与完成标准
 
