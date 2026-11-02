@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Osmo Link"
 include(":app")
+include(":btleplug-jni")

@@ -2,10 +2,15 @@ package com.cakeal.osmolink.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
-
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Camera-monitor palette: near-black canvas, amber accents, red only for REC.
+val OsmoBackground = Color(0xFF0B0C0F)
+val OsmoSurface = Color(0xFF15171C)
+val OsmoSurfaceHigh = Color(0xFF1E2128)
+val OsmoOutline = Color(0xFF2A2E37)
+val OsmoAmber = Color(0xFFFFB020)
+val OsmoOnAmber = Color(0xFF1B1200)
+val OsmoRed = Color(0xFFFF3B30)
+val OsmoGreen = Color(0xFF34C759)
+val OsmoOnGreen = Color(0xFF04130A)
+val OsmoText = Color(0xFFF4F5F7)
+val OsmoMuted = Color(0xFF9AA0AB)
