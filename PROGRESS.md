@@ -164,3 +164,17 @@ screen, scanning state and the adapter-not-ready error path render; release APK 
 with R8 and still contains `libosmo_bridge.so` and the btleplug classes. No phone or
 camera was used: the emulator has no usable BLE adapter, so pairing, recording, real
 scanning and GPS embedding in footage are not claimed.
+
+## Fix: Android scans were rejected before start_scan
+
+btleplug's Android backend implements `Central::adapter_state()` as
+`Ok(CentralState::Unknown)` (droidplug/adapter.rs). The macOS-era pre-scan guard treated
+Unknown as "adapter not ready", so every Android scan failed before `start_scan` ran,
+regardless of granted permissions. The guard is now compiled only for non-Android
+targets; Android relies on `start_scan`, which reports the real failure.
+
+Mapped Java-side scan failures to actionable messages: no adapter / Bluetooth off, and
+permission denied (SecurityException or a message containing "permission"). Added a unit
+test for the mapping; six focused tests, fmt and strict Clippy pass, and the Android
+cdylib builds. Interactive emulator validation was blocked by host load (SystemUI ANR),
+so the fix still needs confirmation on the Xiaomi 15.

@@ -65,6 +65,9 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 
 - 扫描：API 31+ 需要 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；旧版本需要定位权限。
   本应用始终同时请求定位，因为 GPS 注入本身需要它。
+- **不要预检 adapter 状态**：btleplug 的 Android 后端把 `adapter_state()` 固定返回
+  `Unknown`，预检会把所有设备误判为不可用。现在直接调用 `start_scan`，并由它把
+  「蓝牙未开」「权限被拒」映射成明确错误。
 - `btleplug::platform::init` 必须在 Java 线程调用，因此放在 `nativeInit` 中。
 - JNI crate 必须与 btleplug 使用同一个 jni 0.22；JNI 符号与 Kotlin `external fun` 一一对应。
 - release 开 R8：`src/main/keepRules/rules.keep` 保留 `com.nonpolynomial.**`、
@@ -92,7 +95,9 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 
 | 现象 | 处理 |
 | --- | --- |
-| 扫描立即报 adapter not ready | 检查系统蓝牙、权限；模拟器属预期 |
+| 扫描报 Bluetooth is off or unavailable | 打开系统蓝牙，确认「附近设备」权限；模拟器属预期 |
+| 扫描报 permission denied | 设置 → 应用 → 权限 → 附近设备；HyperOS 还需允许定位 |
+| 小米/HyperOS 搜不到设备 | 关闭省电限制、打开系统定位与蓝牙扫描开关，稍后重扫 |
 | 找不到相机 | 相机亮屏、开无线连接、断开其它遥控器；稍后重扫 |
 | 配对失败 | 在相机屏幕确认配对码；拒绝后需重新发起 |
 | 录制命令失败 | 确认当前模式；相机忙碌时可能返回错误，等状态回待机再试 |

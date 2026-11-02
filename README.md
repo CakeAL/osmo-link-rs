@@ -229,7 +229,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cd android && ./gradlew :app:assembleDebug   # Android；Gradle 会顺带构建 Rust
 ```
 
-五个针对性测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值及状态字段的模式/机型解释。
+六个针对性测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值、状态字段的模式/机型解释及扫描错误映射。
 CLI 默认显示主动控制命令发送的 DATA 数据段，以及按序列号和命令号匹配到的应答 DATA：
 
 ```text

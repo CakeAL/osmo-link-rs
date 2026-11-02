@@ -22,7 +22,7 @@ cargo run -p macos-cli -- --scan       # 只扫描后退出
 cargo run -p macos-cli -- --connect OsmoAction4-B15B
 
 cargo fmt --all                        # 格式化（无 rustfmt.toml，用默认规则）
-cargo test --workspace                 # 5 个针对性测试，全部离线
+cargo test --workspace                 # 6 个针对性测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
 cargo check -p android-bridge --target aarch64-linux-android
@@ -118,7 +118,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 
 ## 验证与文档纪律
 
-- 本地可验证：fmt、5 个单元测试、clippy、两个交叉 target 的 `cargo check`、
+- 本地可验证：fmt、6 个单元测试、clippy、两个交叉 target 的 `cargo check`、
   `./gradlew :app:assembleDebug`（含 R8 的 release 也应能构建）。
 - 硬件相关（扫描、配对、录制、休眠、GPS 落盘）**必须真机验证**；不跑硬件就不要在文档里
   写"已验证"。新增未验证能力时，同步更新 [docs/macos-validation.md](docs/macos-validation.md)
@@ -161,6 +161,8 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 - release 启用 R8，`app/src/main/keepRules/rules.keep` 负责保留 btleplug 与 JNI 类；
   新增 JNI 类或回调接口时同步更新该文件。
 - 模拟器没有可用 BLE 适配器，只能验证 UI 与错误路径；扫描/配对/录制必须真机验证。
+- 不要依赖 `Central::adapter_state()`：btleplug 的 Android 后端固定返回 `Unknown`，
+  扫描前必须跳过该检查，让 `start_scan` 报告蓝牙关闭/权限错误。
 
 ## 提交与完成标准
 

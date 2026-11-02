@@ -1,9 +1,11 @@
 use std::{collections::VecDeque, pin::Pin, time::Duration};
 
+#[cfg(not(target_os = "android"))]
+use btleplug::api::CentralState;
 use btleplug::{
     api::{
-        Central, CentralState, CharPropFlags, Characteristic, Manager as _, Peripheral as _,
-        ScanFilter, ValueNotification, WriteType,
+        Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter,
+        ValueNotification, WriteType,
     },
     platform::{Adapter, Manager, Peripheral},
 };
@@ -15,6 +17,27 @@ use crate::{
     Error, Result,
     protocol::{Decoder, Frame},
 };
+
+/// Turn Android's Java-side scan failures into actionable messages.
+fn scan_start_error(error: btleplug::Error) -> Error {
+    match error {
+        btleplug::Error::NoAdapterAvailable => Error::AdapterNotReady(
+            "Bluetooth is off or unavailable; turn on Bluetooth and grant Nearby devices permission",
+        ),
+        btleplug::Error::PermissionDenied => Error::AdapterNotReady(
+            "Bluetooth permission denied; grant Nearby devices permission to this app",
+        ),
+        btleplug::Error::RuntimeError(message)
+            if message.contains("SecurityException")
+                || message.to_ascii_lowercase().contains("permission") =>
+        {
+            Error::AdapterNotReady(
+                "Bluetooth permission denied; grant Nearby devices permission to this app",
+            )
+        }
+        other => Error::Bluetooth(other),
+    }
+}
 
 fn uuid(short: u16) -> Uuid {
     Uuid::from_u128(((short as u128) << 96) | 0x0000_1000_8000_0080_5f9b_34fb)
@@ -47,23 +70,31 @@ impl Scanner {
 
     pub async fn scan(&self, duration: Duration) -> Result<Vec<Device>> {
         // CoreBluetooth start_scan only queues a request: it can succeed while
-        // Bluetooth is off or the terminal has no permission, then report no devices.
-        let state = timeout(Duration::from_secs(3), self.adapter.adapter_state())
-            .await
-            .map_err(|_| Error::Timeout("Bluetooth adapter state"))??;
-        tracing::debug!(?state, "Bluetooth scan adapter state");
-        match state {
-            CentralState::PoweredOn => {}
-            CentralState::PoweredOff => {
-                return Err(Error::AdapterNotReady("turn on Bluetooth on the host"));
-            }
-            CentralState::Unknown => {
-                return Err(Error::AdapterNotReady(
-                    "check Bluetooth permission for this app; the adapter may also be initializing or resetting",
-                ));
+        // Bluetooth is off or the app has no permission, then report no devices.
+        // Android's btleplug backend always reports Unknown, so a pre-check
+        // would reject every scan there; start_scan reports the real failure.
+        #[cfg(not(target_os = "android"))]
+        {
+            let state = timeout(Duration::from_secs(3), self.adapter.adapter_state())
+                .await
+                .map_err(|_| Error::Timeout("Bluetooth adapter state"))??;
+            tracing::debug!(?state, "Bluetooth scan adapter state");
+            match state {
+                CentralState::PoweredOn => {}
+                CentralState::PoweredOff => {
+                    return Err(Error::AdapterNotReady("turn on Bluetooth on the host"));
+                }
+                CentralState::Unknown => {
+                    return Err(Error::AdapterNotReady(
+                        "check Bluetooth permission for this app; the adapter may also be initializing or resetting",
+                    ));
+                }
             }
         }
-        self.adapter.start_scan(ScanFilter::default()).await?;
+        self.adapter
+            .start_scan(ScanFilter::default())
+            .await
+            .map_err(scan_start_error)?;
         sleep(duration).await;
         self.adapter.stop_scan().await?;
         let mut devices = Vec::new();
@@ -194,5 +225,28 @@ impl Link {
 
     pub async fn close(&mut self) {
         let _ = timeout(Duration::from_secs(3), self.peripheral.disconnect()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_start_failures_become_actionable_messages() {
+        assert!(matches!(
+            scan_start_error(btleplug::Error::NoAdapterAvailable),
+            Error::AdapterNotReady(_)
+        ));
+        assert!(matches!(
+            scan_start_error(btleplug::Error::RuntimeError(
+                "Need android.permission.BLUETOOTH_SCAN permission".into()
+            )),
+            Error::AdapterNotReady(_)
+        ));
+        assert!(matches!(
+            scan_start_error(btleplug::Error::UnexpectedCallback),
+            Error::Bluetooth(btleplug::Error::UnexpectedCallback)
+        ));
     }
 }
