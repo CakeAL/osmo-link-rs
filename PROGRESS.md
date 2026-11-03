@@ -196,3 +196,16 @@ Video-like modes (everything except Photo, PanoramicPhoto and SubjectTracking) n
 the remaining recordable time (`1h 02m`) in the status card instead of the remaining shot
 count; photo modes keep showing shots. Duration formatting moved to `Formatters.kt` with
 JVM unit tests covering both the recording clock and the remaining-time label.
+
+## Android: Material 3 design pass and UI file split
+
+Moved the Compose UI onto Material 3 design tokens: a full dark color scheme built from
+M3 surface-container roles, the M3 shape and type scales, and M3 components (TopAppBar,
+Card, ListItem, FilterChip, Switch, Surface actions, AlertDialog, AnimatedContent screen
+transition). The dark camera-HUD identity and amber accent are preserved; camera metrics
+use monospace inside the type scale.
+
+Split the ~800-line UI file into focused files: OsmoLinkApp (shell and permissions),
+ConnectScreen, ControlScreen, StatusHero, ModePicker, StatusDetails, GpsCard, ControlBar,
+PairingDialog, Labels, Permissions. Kotlin unit tests and the debug build pass; both
+screens were checked on the emulator.
