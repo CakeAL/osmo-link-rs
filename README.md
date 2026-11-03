@@ -196,7 +196,7 @@ CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举�
 原生 Compose 应用位于 [android](android)，Rust core 以 JNI 共享库接入：
 
 - `crates/android-bridge`：JNI 层（cdylib `libosmo_bridge.so`），扫描、连接、命令与事件。
-- `android/app`：Kotlin 单页深色 HUD，含权限、配对与 GPS 注入。
+- `android/app`：Kotlin 单页深色 HUD，含权限、配对、GPS 注入与前台服务。
 - `android/btleplug-jni`：内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR）。
 
 构建需要 `aarch64-linux-android` target、Android NDK 29 与 cargo-ndk：
@@ -214,6 +214,9 @@ Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
 首次运行授予「附近设备/位置」权限，唤醒相机并开启无线连接后搜索；
 首次配对需在相机屏幕确认 4 位配对码。定位开关按 100ms 目标间隔发送手机定位，
 实际频率由系统定位决定。
+
+连接或开启定位期间会运行前台服务，常驻通知显示当前模式、录制时长、电量与定位状态，
+并提供「断开」「停止定位」动作；退出界面后连接与定位继续工作。
 
 详细结构、约束与排错见 [Android 文档](docs/android.md)。
 iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-apple-ios`

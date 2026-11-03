@@ -48,7 +48,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 | [macos-cli/src/main.rs](crates/macos-cli/src/main.rs) | 命令解析、事件循环、`controller.json`、JSONL 回放 |
 | [android-bridge/src/lib.rs](crates/android-bridge/src/lib.rs) | JNI 入口、JVM 回调、扫描/连接/命令/GPS 转发 |
 | [android-bridge/src/status.rs](crates/android-bridge/src/status.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
-| [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、ViewModel、权限、`GpsTracker` |
+| [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、`OsmoRepository`、前台服务、权限、`GpsTracker` |
 | [docs/macos-validation.md](docs/macos-validation.md) | 真机证据与**未**验证范围 |
 | [PROGRESS.md](PROGRESS.md) | 按步骤追加的实现日志（英文） |
 
@@ -156,10 +156,14 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
   `jni` crate 版本必须与 btleplug 一致（0.22），否则 `Env` 类型不兼容。
 - `btleplug::platform::init` 必须在 Java 线程调用（现位于 `nativeInit`）；
   它依赖内置的 `com.nonpolynomial.**` 与 `io.github.gedgygedgy.**` 类。
-- 事件协议：`onEvent(type, json)`。新增事件类型时同步 Kotlin `ControllerViewModel.onEvent`，
+- 事件协议：`onEvent(type, json)`。新增事件类型时同步 `OsmoRepository.onEvent`，
   未识别类型会被静默忽略。
 - release 启用 R8，`app/src/main/keepRules/rules.keep` 负责保留 btleplug 与 JNI 类；
   新增 JNI 类或回调接口时同步更新该文件。
+- 状态与 GPS 属于 `OsmoRepository`（`data/`），不要搬回 ViewModel，否则退出界面会断连。
+- `OsmoService` 在 `connected || gpsEnabled` 时前台运行；通知文案由纯函数
+  `NotificationContent.kt` 生成，修改文案要同步 `NotificationContentTest`。
+- manifest 的前台服务类型固定为 `connectedDevice|location`，改动需同步 `startForeground` 参数。
 - 模拟器没有可用 BLE 适配器，只能验证 UI 与错误路径；扫描/配对/录制必须真机验证。
 - 不要依赖 `Central::adapter_state()`：btleplug 的 Android 后端固定返回 `Unknown`，
   扫描前必须跳过该检查，让 `start_scan` 报告蓝牙关闭/权限错误。

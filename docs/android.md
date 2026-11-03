@@ -8,13 +8,15 @@
 | 位置 | 作用 |
 | --- | --- |
 | [crates/android-bridge](../crates/android-bridge) | JNI cdylib（`libosmo_bridge.so`）：扫描、连接、命令、事件、GPS |
-| [android/app](../android/app) | Compose UI、`ControllerViewModel`、权限、`GpsTracker` |
+| [android/app](../android/app) | Compose UI、权限、前台服务；状态在 `OsmoRepository`，GPS 在 `GpsTracker` |
+| [OsmoRepository.kt](../android/app/src/main/java/com/cakeal/osmolink/data/OsmoRepository.kt) | 进程级状态、GPS、前台服务启停 |
+| [OsmoService.kt](../android/app/src/main/java/com/cakeal/osmolink/service/OsmoService.kt) | 前台服务与常驻通知 |
 | [android/btleplug-jni](../android/btleplug-jni) | 内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR） |
 | [scripts/build-android.sh](../scripts/build-android.sh) | cargo-ndk 构建脚本，被 Gradle `preBuild` 调用 |
 
 数据流：Kotlin `OsmoNative` 调 JNI → Rust 在 Tokio runtime 上操作相机 →
-`BridgeListener.onEvent(type, json)` 回到 Kotlin → `ControllerViewModel` 合并成
-`StateFlow<UiState>` → Compose 渲染。所有命令立即返回，结果以事件形式回来。
+`BridgeListener.onEvent(type, json)` 回到 Kotlin → `OsmoRepository` 合并成
+`StateFlow<UiState>` → Compose 与通知渲染。所有命令立即返回，结果以事件形式回来。
 
 事件类型：`modes`、`devices`、`pairing`、`connected`、`connectFailed`、`status`、
 `modeInfo`、`version`、`command`、`warning`、`error`、`gpsError`、`reconnecting`、
@@ -50,6 +52,21 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.cakeal.osmolink/.MainActivity
 ```
 
+## 后台保活
+
+连接成功或开启定位后，`OsmoRepository` 启动 `OsmoService`；两者都关闭时停止。
+服务是前台服务（类型 `connectedDevice|location`），常驻通知显示当前模式、录制时长、
+电量、剩余容量/时长与定位频率，并提供「断开」「停止定位」动作。
+
+状态与 GPS 属于进程级 `OsmoRepository`，不跟随 Activity 生命周期，因此退出界面后
+连接和定位仍保持。进程被系统杀死后服务不会自动重建（`START_NOT_STICKY`），因为此时
+BLE 连接已经丢失。
+
+Android 12+ 不允许从后台启动前台服务，所以服务只在用户于界面内连接/开启定位时启动。
+Android 13+ 首次连接后会请求通知权限；拒绝只会隐藏通知，服务仍运行。
+
+小米/HyperOS 还需在系统设置中允许自启动、省电策略设为「无限制」，并锁定最近任务卡片。
+
 ## 首次使用
 
 1. 授予「附近设备」与「位置信息」权限（Android 12+ 为运行时权限）。
@@ -63,6 +80,9 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 
 ## 权限与平台约束
 
+- 前台服务：`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CONNECTED_DEVICE`、
+  `FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`；服务类型在 manifest 固定为
+  `connectedDevice|location`，Android 14+ 必须与 `startForeground` 参数一致。
 - 扫描：API 31+ 需要 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；旧版本需要定位权限。
   本应用始终同时请求定位，因为 GPS 注入本身需要它。
 - **不要预检 adapter 状态**：btleplug 的 Android 后端把 `adapter_state()` 固定返回
@@ -81,13 +101,16 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 - debug APK 构建、安装、启动；
 - 扫描页渲染、扫描中状态、失败后恢复；
 - release 构建通过 R8，btleplug 类与原生库仍在 APK 内；
-- 暂停在模拟器无可用 BLE 适配器时给出 adapter-not-ready 错误。
+- 暂停在模拟器无可用 BLE 适配器时给出 adapter-not-ready 错误；
+- 前台服务启动成功：`dumpsys` 显示 `isForeground=true`、`types=0x18`
+  （connectedDevice|location），通知标题/正文符合预期。
 
 未验证（需要真机 + 相机）：
 
 - 真机扫描、配对、录制、模式切换、状态推送的端到端行为；
 - GPS 是否真正写入视频素材（发送完成不等于落盘）；
-- 后台/息屏场景，以及厂商 ROM 的省电策略影响。
+- 真机长时间后台、Doze 与厂商省电策略下的存活；
+- 真实连接状态下的通知刷新（模拟器没有 BLE，验证时通知停留在「未连接」）。
 
 模拟器没有可用的 BLE 适配器，不能代替真机结论。
 
@@ -98,6 +121,7 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 | 扫描报 Bluetooth is off or unavailable | 打开系统蓝牙，确认「附近设备」权限；模拟器属预期 |
 | 扫描报 permission denied | 设置 → 应用 → 权限 → 附近设备；HyperOS 还需允许定位 |
 | 小米/HyperOS 搜不到设备 | 关闭省电限制、打开系统定位与蓝牙扫描开关，稍后重扫 |
+| 常驻通知不显示 | 授予通知权限；HyperOS 还需允许自启动，否则服务可能被清理 |
 | 找不到相机 | 相机亮屏、开无线连接、断开其它遥控器；稍后重扫 |
 | 配对失败 | 在相机屏幕确认配对码；拒绝后需重新发起 |
 | 连接报 `status: 128` / CCCD 失败 | Android 首次 CCCD 写入的常见错误；已自动重试并重连一次，仍失败可再点连接 |

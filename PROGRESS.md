@@ -209,3 +209,17 @@ Split the ~800-line UI file into focused files: OsmoLinkApp (shell and permissio
 ConnectScreen, ControlScreen, StatusHero, ModePicker, StatusDetails, GpsCard, ControlBar,
 PairingDialog, Labels, Permissions. Kotlin unit tests and the debug build pass; both
 screens were checked on the emulator.
+
+## Android: foreground service and persistent notification
+
+Moved bridge state and the GPS tracker into a process-wide `OsmoRepository` so they no
+longer follow the activity lifecycle; `ControllerViewModel` is now a thin facade.
+Added `OsmoService`, a foreground service typed `connectedDevice|location`, started while
+a camera is connected or location injection is on. Its ongoing notification shows the
+current mode, recording duration, battery, remaining capacity/shots and GPS rate, with
+"断开"/"停止定位" actions. Notification text comes from a pure `notificationContent()`
+function with unit tests. POST_NOTIFICATIONS is requested after the first connection.
+
+Verified on the emulator: the service reports `isForeground=true`, `types=0x18` and the
+expected notification title/text. Real-device background survival and OEM battery
+managers remain unverified.

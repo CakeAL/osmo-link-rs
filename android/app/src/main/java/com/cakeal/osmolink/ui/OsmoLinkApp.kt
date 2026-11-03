@@ -1,6 +1,8 @@
 package com.cakeal.osmolink.ui
 
+import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -65,6 +67,24 @@ fun OsmoLinkApp(viewModel: ControllerViewModel) {
         } else {
             pendingTarget = target
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { }
+
+    // The foreground service can run without this, but the notification is
+    // hidden until the user grants it.
+    LaunchedEffect(state.connected) {
+        if (state.connected &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
