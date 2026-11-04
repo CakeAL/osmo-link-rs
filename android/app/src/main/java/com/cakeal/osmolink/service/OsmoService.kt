@@ -90,19 +90,23 @@ class OsmoService : Service() {
         lastContent = content
         try {
             NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification(state))
-        } catch (_: SecurityException) {
-            // The notification permission can be revoked at runtime; keep running.
+        } catch (error: Throwable) {
+            // A broken OEM notification stack must not take down the app.
+            Log.w(TAG, "Unable to update notification", error)
         }
     }
 
     private fun buildNotification(state: UiState): Notification {
         val content = notificationContent(state)
         val startedAt = recordingStart(state)
-        return if (startedAt != null && canPromoteLiveUpdate()) {
-            buildLiveUpdate(content, state, startedAt)
+        val live = if (startedAt != null && canPromoteLiveUpdate()) {
+            runCatching { buildLiveUpdate(content, state, startedAt) }
+                .onFailure { Log.w(TAG, "Live update failed; using standard notification", it) }
+                .getOrNull()
         } else {
-            buildCompatNotification(content, state, startedAt)
+            null
         }
+        return live ?: buildCompatNotification(content, state, startedAt)
     }
 
     private fun buildCompatNotification(
@@ -170,8 +174,15 @@ class OsmoService : Service() {
 
     private fun canPromoteLiveUpdate(): Boolean {
         if (Build.VERSION.SDK_INT < 36) return false
-        return getSystemService(NotificationManager::class.java)
-            ?.canPostPromotedNotifications() == true
+        // Some OEM builds expose the API before the implementation is stable.
+        // Keep promotion off on Xiaomi until it has been validated on device.
+        if (Build.MANUFACTURER.equals("xiaomi", ignoreCase = true)) return false
+        return try {
+            getSystemService(NotificationManager::class.java)
+                ?.canPostPromotedNotifications() == true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun recordingStart(state: UiState): Long? {

@@ -66,6 +66,8 @@ BLE 连接已经丢失。
 `setRequestPromotedOngoing`、短文本 `REC`），系统以状态栏胶囊/锁屏卡片呈现；
 用户可在系统设置关闭提升，`canPostPromotedNotifications()` 为 false 时自动退回普通通知。
 录制时长使用原生 chronometer，不依赖状态推送频率。
+小米 ROM 目前不启用 promoted 路径（厂商实现未验证），直接使用普通通知；
+Live Update 构建失败也会自动退回，不会影响前台服务。
 
 Android 12+ 不允许从后台启动前台服务，所以服务只在用户于界面内连接/开启定位时启动。
 Android 13+ 首次连接后会请求通知权限；拒绝只会隐藏通知，服务仍运行。

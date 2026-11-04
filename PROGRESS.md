@@ -235,3 +235,12 @@ no longer embeds the timer, so updates no longer depend on status-push cadence.
 Verified on the API 37 emulator: the notification has `PROMOTED_ONGOING`, template
 `android.app.Notification$ProgressStyle`, and `shortCriticalText=REC`. Vendor islands
 (Xiaomi Super Island etc.) are intentionally not implemented.
+
+## Fix: fall back when OEM live updates fail
+
+A Xiaomi device crashed when recording started and again when reconnecting while the camera
+was still recording, which points at the Android 16 promoted-notification path being built
+whenever `capturing` turned true. Notification construction/updates are now wrapped so any
+failure falls back to the standard ongoing notification, and promoted Live Updates are
+disabled on Xiaomi builds until the vendor implementation is validated on device. Foreground
+service types and the chronometer remain unchanged.
