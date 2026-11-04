@@ -25,7 +25,7 @@ class NotificationContentTest {
                 ),
             ),
         )
-        assertEquals("OsmoAction4-B15B · 录制中 00:42", content.title)
+        assertEquals("OsmoAction4-B15B · 录制中", content.title)
         assertTrue(content.text.contains("4K 16:9"))
         assertTrue(content.text.contains("电量 80%"))
         assertTrue(content.text.contains("剩余 1h 00m"))

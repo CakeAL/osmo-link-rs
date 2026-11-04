@@ -223,3 +223,15 @@ function with unit tests. POST_NOTIFICATIONS is requested after the first connec
 Verified on the emulator: the service reports `isForeground=true`, `types=0x18` and the
 expected notification title/text. Real-device background survival and OEM battery
 managers remain unverified.
+
+## Android: Live Update for recording
+
+The ongoing notification now uses a native chronometer for the recording duration, and on
+Android 16+ requests a Live Update (`Notification.ProgressStyle`, `setRequestPromotedOngoing`,
+`setShortCriticalText("REC")`, `POST_PROMOTED_NOTIFICATIONS`). It falls back to the compat
+notification when the system is older or the user disabled promoted notifications. The title
+no longer embeds the timer, so updates no longer depend on status-push cadence.
+
+Verified on the API 37 emulator: the notification has `PROMOTED_ONGOING`, template
+`android.app.Notification$ProgressStyle`, and `shortCriticalText=REC`. Vendor islands
+(Xiaomi Super Island etc.) are intentionally not implemented.

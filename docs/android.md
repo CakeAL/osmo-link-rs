@@ -62,6 +62,11 @@ adb shell am start -n com.cakeal.osmolink/.MainActivity
 连接和定位仍保持。进程被系统杀死后服务不会自动重建（`START_NOT_STICKY`），因为此时
 BLE 连接已经丢失。
 
+录制中在 Android 16+ 会申请 Live Update（`Notification.ProgressStyle`、
+`setRequestPromotedOngoing`、短文本 `REC`），系统以状态栏胶囊/锁屏卡片呈现；
+用户可在系统设置关闭提升，`canPostPromotedNotifications()` 为 false 时自动退回普通通知。
+录制时长使用原生 chronometer，不依赖状态推送频率。
+
 Android 12+ 不允许从后台启动前台服务，所以服务只在用户于界面内连接/开启定位时启动。
 Android 13+ 首次连接后会请求通知权限；拒绝只会隐藏通知，服务仍运行。
 
@@ -83,6 +88,8 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 - 前台服务：`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CONNECTED_DEVICE`、
   `FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`；服务类型在 manifest 固定为
   `connectedDevice|location`，Android 14+ 必须与 `startForeground` 参数一致。
+- Live Update：Android 16+ 需要 `POST_PROMOTED_NOTIFICATIONS`，并先用
+  `canPostPromotedNotifications()` 判断用户是否允许。
 - 扫描：API 31+ 需要 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；旧版本需要定位权限。
   本应用始终同时请求定位，因为 GPS 注入本身需要它。
 - **不要预检 adapter 状态**：btleplug 的 Android 后端把 `adapter_state()` 固定返回
@@ -104,13 +111,16 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 - 暂停在模拟器无可用 BLE 适配器时给出 adapter-not-ready 错误；
 - 前台服务启动成功：`dumpsys` 显示 `isForeground=true`、`types=0x18`
   （connectedDevice|location），通知标题/正文符合预期。
+- Android 16 Live Update 路径：API 37 模拟器上通知带 `PROMOTED_ONGOING`、
+  `ProgressStyle` 模板与 `shortCriticalText=REC`。
 
 未验证（需要真机 + 相机）：
 
 - 真机扫描、配对、录制、模式切换、状态推送的端到端行为；
 - GPS 是否真正写入视频素材（发送完成不等于落盘）；
 - 真机长时间后台、Doze 与厂商省电策略下的存活；
-- 真实连接状态下的通知刷新（模拟器没有 BLE，验证时通知停留在「未连接」）。
+- 真实连接状态下的通知刷新（模拟器没有 BLE，验证时使用临时演示状态）；
+- 各厂商 ROM 对 Live Update 的展示差异（部分系统可能折叠或不显示胶囊）。
 
 模拟器没有可用的 BLE 适配器，不能代替真机结论。
 

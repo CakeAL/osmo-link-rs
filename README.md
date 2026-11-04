@@ -217,6 +217,7 @@ Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
 
 连接或开启定位期间会运行前台服务，常驻通知显示当前模式、录制时长、电量与定位状态，
 并提供「断开」「停止定位」动作；退出界面后连接与定位继续工作。
+录制中在 Android 16+ 会以 Live Update 呈现（状态栏胶囊/锁屏卡片），旧版本退回普通常驻通知。
 
 详细结构、约束与排错见 [Android 文档](docs/android.md)。
 iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-apple-ios`

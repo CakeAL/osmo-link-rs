@@ -164,6 +164,9 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 - `OsmoService` 在 `connected || gpsEnabled` 时前台运行；通知文案由纯函数
   `NotificationContent.kt` 生成，修改文案要同步 `NotificationContentTest`。
 - manifest 的前台服务类型固定为 `connectedDevice|location`，改动需同步 `startForeground` 参数。
+- 录制中在 Android 16+ 走 `Notification.ProgressStyle` + `setRequestPromotedOngoing`，
+  需要 `POST_PROMOTED_NOTIFICATIONS` 与 `canPostPromotedNotifications()` 检查；
+  旧系统或用户关闭提升时退回 compat 通知，不要假定一定会上岛/胶囊。
 - 模拟器没有可用 BLE 适配器，只能验证 UI 与错误路径；扫描/配对/录制必须真机验证。
 - 不要依赖 `Central::adapter_state()`：btleplug 的 Android 后端固定返回 `Unknown`，
   扫描前必须跳过该检查，让 `start_scan` 报告蓝牙关闭/权限错误。

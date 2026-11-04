@@ -8,8 +8,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,11 +33,15 @@ import kotlinx.coroutines.launch
  * The service owns no state of its own: it starts while the repository reports
  * an active camera or location stream, and renders the current state into an
  * ongoing notification (recording duration, mode, battery, GPS rate).
+ *
+ * While recording it also asks Android 16+ to promote the notification to a
+ * Live Update; older systems get the same content as a normal ongoing notice.
  */
 class OsmoService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var foregroundStarted = false
     private var lastContent: NotificationContent? = null
+    private var recordingStartedAt: Long? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -90,26 +97,37 @@ class OsmoService : Service() {
 
     private fun buildNotification(state: UiState): Notification {
         val content = notificationContent(state)
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val startedAt = recordingStart(state)
+        return if (startedAt != null && canPromoteLiveUpdate()) {
+            buildLiveUpdate(content, state, startedAt)
+        } else {
+            buildCompatNotification(content, state, startedAt)
+        }
+    }
+
+    private fun buildCompatNotification(
+        content: NotificationContent,
+        state: UiState,
+        startedAt: Long?,
+    ): Notification {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_osmo)
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
-            .setContentIntent(openApp)
+            .setContentIntent(openApp())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .setShowWhen(false)
+            .setShowWhen(startedAt != null)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
+        if (startedAt != null) {
+            // The chronometer ticks natively even if status pushes stall.
+            builder.setWhen(startedAt).setUsesChronometer(true)
+        }
         if (state.connected) {
             builder.addAction(0, "断开", serviceAction(ACTION_DISCONNECT, 1))
         }
@@ -118,6 +136,69 @@ class OsmoService : Service() {
         }
         return builder.build()
     }
+
+    @RequiresApi(36)
+    private fun buildLiveUpdate(
+        content: NotificationContent,
+        state: UiState,
+        startedAt: Long,
+    ): Notification {
+        val builder = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_osmo)
+            .setContentTitle(content.title)
+            .setContentText(content.text)
+            .setContentIntent(openApp())
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(true)
+            .setWhen(startedAt)
+            .setUsesChronometer(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText("REC")
+
+        if (state.connected) {
+            builder.addAction(platformAction("断开", ACTION_DISCONNECT, 1))
+        }
+        if (state.gpsEnabled) {
+            builder.addAction(platformAction("停止定位", ACTION_STOP_GPS, 2))
+        }
+        return builder.build()
+    }
+
+    private fun canPromoteLiveUpdate(): Boolean {
+        if (Build.VERSION.SDK_INT < 36) return false
+        return getSystemService(NotificationManager::class.java)
+            ?.canPostPromotedNotifications() == true
+    }
+
+    private fun recordingStart(state: UiState): Long? {
+        if (!state.status.capturing) {
+            recordingStartedAt = null
+            return null
+        }
+        val existing = recordingStartedAt
+        if (existing != null) return existing
+        val started = System.currentTimeMillis() - state.status.recordSeconds * 1_000L
+        recordingStartedAt = started
+        return started
+    }
+
+    private fun openApp(): PendingIntent = PendingIntent.getActivity(
+        this,
+        0,
+        Intent(this, MainActivity::class.java),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun platformAction(title: String, action: String, requestCode: Int): Notification.Action =
+        Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_stat_osmo),
+            title,
+            serviceAction(action, requestCode),
+        ).build()
 
     private fun serviceAction(action: String, requestCode: Int): PendingIntent =
         PendingIntent.getService(
