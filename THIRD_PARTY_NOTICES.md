@@ -62,6 +62,19 @@ The source code of esp-idf is available at: https://github.com/espressif/esp-idf
 ********************************************************************************************************
 ```
 
+## DJI `djmd` protobuf field definitions
+
+`crates/osmo_gps_extract_gpx` uses the public DJI timed-metadata field numbering
+for `dvtm_ac203.proto`, `dvtm_ac204.proto` and `dvtm_ac206.proto`. The field map was
+cross-checked against ExifTool's DJI Protobuf documentation
+(https://exiftool.org/TagNames/DJI.html#Protobuf) and the MIT-licensed
+PyOsmoGPS project (https://github.com/francescocaponio/pyosmogps). No PyOsmoGPS
+source code is vendored; only the public schema/field numbering is used.
+
+The crate's GPX output uses the `gpx` crate (MIT), geometry types come from
+`geo-types` (MIT/Apache-2.0), protobuf decoding uses `prost` (Apache-2.0), and
+timestamps use `time` (MIT/Apache-2.0).
+
 ## btleplug Android JNI support classes
 
 `android/btleplug-jni/src/main/java` is copied unmodified from btleplug 0.13.5

@@ -244,3 +244,31 @@ whenever `capturing` turned true. Notification construction/updates are now wrap
 failure falls back to the standard ongoing notification, and promoted Live Updates are
 disabled on Xiaomi builds until the vendor implementation is validated on device. Foreground
 service types and the chronometer remain unchanged.
+
+## Video GPS extraction crate
+
+Added `crates/osmo_gps_extract_gpx`, a standalone MP4 -> GPX tool for Osmo Action
+4/5/6 files. It finds the `stsd` sample entry `djmd` instead of assuming a fixed
+track number, maps `stsc`/`stsz`/`stco` or `co64` to sample offsets, and decodes
+each sample with `prost` using the public DJI `dvtm_ac203/ac204/ac206` field
+numbering. GPX 1.1 output is produced by the `gpx` crate; timestamps use `time`
+and the CLI supports `none`, `discard` and `linear` resampling (default 2 Hz
+linear, matching pyosmogps' CLI default). Accelerometer/derivative GPX
+extensions were dropped because `gpx` 0.10 does not expose extensions.
+
+The MP4 container layer remains a small local box parser. `mp4` 0.14 rejects
+DJI's 32-byte `udta/meta/hdlr` with `hdlr size too small`, and `mp4parse` is a
+streaming parser that would read the whole 16 GB `mdat`; neither can seek straight
+to the metadata samples.
+
+Unit tests cover sample-table mapping (including multiple samples per chunk),
+missing `djmd` detection, prost round-trip, timestamp parsing, resampling and GPX
+output. Verified with `/Volumes/SD_Card/DCIM/DJI_001/DJI_20261105124234_0003_D.MP4`
+(Action 6, 16 GB): detected `dvtm_ac206.proto`, `DJI OsmoAction6`, serial
+`9KRVP8A00B06LC`, 71,386 raw points, first `22.7080722, 114.2485718, 52.287 m`
+at `2026-11-05T02:42:52Z`, last `22.7518894, 114.4701271, 32.279 m` at
+`2026-11-05T03:18:46Z`. Default 2 Hz linear output has 4,309 points. Action 4/5
+files were not available for hardware verification.
+
+`cargo fmt --all --check`, `cargo test --workspace` (18 tests) and
+`cargo clippy --workspace --all-targets -- -D warnings` pass.

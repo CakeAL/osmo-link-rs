@@ -224,6 +224,26 @@ iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-a
 做类型检查；JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android`
 检查。[btleplug 平台接入文档](https://docs.rs/btleplug/0.13.5/btleplug/)。
 
+## 视频 GPS 提取
+
+[crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) 从 Action 4/5/6 的 MP4
+中读取 `djmd` timed metadata 轨，解码 DJI protobuf 的 GPS 点并写成 GPX。
+它按 `stsd` 的 sample entry `djmd` 选轨，不依赖固定的第 3 条 `trak`。
+
+```sh
+cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
+cargo run -p osmo_gps_extract_gpx -- --resample none input.MP4 output.gpx
+cargo run -p osmo_gps_extract_gpx -- -r discard -f 1 input.MP4 output.gpx
+cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx
+```
+
+默认 2 Hz 线性插值；`--resample none` 保留全部样本，`discard` 按帧率等间隔丢弃。
+`--timezone-offset` 从嵌入的 naive 时间中减去指定小时数，默认 0。
+GPX 由 `gpx` crate 生成，protobuf 由 `prost` 解码；详细说明见
+[crate README](crates/osmo_gps_extract_gpx/README.md)。
+
+已用 Action 6 的 16 GB 测试文件验证：71,386 个 `djmd` 样本，默认输出 4,309 个点。
+
 ## 开发检查
 
 ```sh
@@ -233,7 +253,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cd android && ./gradlew :app:assembleDebug   # Android；Gradle 会顺带构建 Rust
 ```
 
-六个针对性测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值、状态字段的模式/机型解释及扫描错误映射。
+核心 6 个测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值、状态字段的模式/机型解释及扫描错误映射；视频提取 crate 另有 12 个测试，覆盖 MP4 样本表映射、protobuf 往返、时间解析、重采样和 GPX 输出。
 CLI 默认显示主动控制命令发送的 DATA 数据段，以及按序列号和命令号匹配到的应答 DATA：
 
 ```text

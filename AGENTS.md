@@ -7,10 +7,11 @@
 `osmo-link-rs` 是一个最小化的 Rust 库，用公开的 DJI R SDK BLE 协议遥控 Osmo 相机
 （Action 4 为已验证机型），外加 macOS 调试 CLI 和 Android 原生 App。
 
-- 一个 Cargo workspace（resolver 3，edition 2024），三个 crate：
+- 一个 Cargo workspace（resolver 3，edition 2024），四个 crate：
   - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无平台专属业务代码。**
   - `macos-cli`（[crates/macos-cli](crates/macos-cli)）：命令行外壳、配对身份持久化、GPS 回放。
   - `android-bridge`（[crates/android-bridge](crates/android-bridge)）：JNI cdylib，向 Kotlin 暴露异步 JSON 事件。
+  - `osmo_gps_extract_gpx`（[crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx)）：独立 MP4 → GPX 工具，不在手机上运行。
 - `android/`（[android](android)）是独立 Gradle 工程：`:app`（Compose HUD）、
   `:btleplug-jni`（内置的 btleplug Java 支持类）。原生库由 cargo-ndk 构建。
 
@@ -20,9 +21,10 @@
 cargo run -p macos-cli                 # 交互式 CLI；命令 DATA 默认打印
 cargo run -p macos-cli -- --scan       # 只扫描后退出
 cargo run -p macos-cli -- --connect OsmoAction4-B15B
+cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
 
 cargo fmt --all                        # 格式化（无 rustfmt.toml，用默认规则）
-cargo test --workspace                 # 6 个针对性测试，全部离线
+cargo test --workspace                 # 18 个单元测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
 cargo check -p android-bridge --target aarch64-linux-android
@@ -49,10 +51,11 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 | [android-bridge/src/lib.rs](crates/android-bridge/src/lib.rs) | JNI 入口、JVM 回调、扫描/连接/命令/GPS 转发 |
 | [android-bridge/src/status.rs](crates/android-bridge/src/status.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
 | [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、`OsmoRepository`、前台服务、权限、`GpsTracker` |
+| [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) | MP4 `djmd` 轨 GPS 提取 → GPX（`gpx` + `prost`） |
 | [docs/macos-validation.md](docs/macos-validation.md) | 真机证据与**未**验证范围 |
 | [PROGRESS.md](PROGRESS.md) | 按步骤追加的实现日志（英文） |
 
-任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；命令语义与重连 →
+任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；视频 GPS → `osmo_gps_extract_gpx`；命令语义与重连 →
 `camera.rs`；状态字段含义 → `status.rs` + `enums.rs`；定位编码 → `gps.rs`；CLI 交互 →
 `macos-cli/src/main.rs`；Android 界面 → `android/app`；JNI 接口 → `android-bridge`。
 
@@ -118,7 +121,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 
 ## 验证与文档纪律
 
-- 本地可验证：fmt、6 个单元测试、clippy、两个交叉 target 的 `cargo check`、
+- 本地可验证：fmt、core 6 个 + 视频提取 12 个单元测试、clippy、两个交叉 target 的 `cargo check`、
   `./gradlew :app:assembleDebug`（含 R8 的 release 也应能构建）。
 - 硬件相关（扫描、配对、录制、休眠、GPS 落盘）**必须真机验证**；不跑硬件就不要在文档里
   写"已验证"。新增未验证能力时，同步更新 [docs/macos-validation.md](docs/macos-validation.md)

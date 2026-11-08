@@ -1,0 +1,20 @@
+[package]
+name = "osmo_gps_extract_gpx"
+version.workspace = true
+edition.workspace = true
+description = "Extract DJI Osmo Action GPS metadata from MP4 files and write GPX"
+
+[dependencies]
+gpx = "0.10"
+geo-types = "0.7"
+prost = "0.14"
+thiserror.workspace = true
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+
+[lib]
+name = "osmo_gps_extract_gpx"
+path = "src/lib.rs"
+
+[[bin]]
+name = "osmo_gps_extract_gpx"
+path = "src/main.rs"
