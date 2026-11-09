@@ -1,0 +1,298 @@
+package com.cakeal.osmolink.ui
+
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
+import com.cakeal.osmolink.BuildConfig
+import com.cakeal.osmolink.R
+import com.cakeal.osmolink.data.Appearance
+import com.cakeal.osmolink.data.ThemeMode
+
+private val RGB_HEX = Regex("[0-9A-Fa-f]{6}")
+
+private enum class AppearanceEditor { Mode, Accent }
+
+@Composable
+internal fun SettingsScreen(
+    appearance: Appearance,
+    permissions: PermissionStatus,
+    onAppearanceChange: (Appearance) -> Unit,
+    onBack: () -> Unit,
+    onAbout: () -> Unit,
+    onError: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var editor by rememberSaveable { mutableStateOf<AppearanceEditor?>(null) }
+    val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+
+    SettingsPage("设置", onBack) {
+        SettingsGroup("权限管理") {
+            SettingsRow(
+                "蓝牙",
+                when {
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> "由系统管理"
+                    permissions.bluetooth -> "附近设备已授权"
+                    else -> "附近设备未授权"
+                },
+                onClick = {
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        appDetails
+                    } else {
+                        Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                    }
+                    context.openScreen(intent, onError)
+                },
+            )
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            val location = when {
+                permissions.backgroundLocation && permissions.preciseLocation -> "始终允许精确位置"
+                permissions.backgroundLocation -> "始终允许大致位置"
+                permissions.preciseLocation -> "已授权精确位置"
+                permissions.approximateLocation -> "已授权大致位置"
+                else -> "未授权"
+            }
+            SettingsRow(
+                "位置权限",
+                if (permissions.backgroundLocation) location else "$location · 可在系统设置中选择「始终允许」",
+                onClick = { context.openScreen(appDetails, onError) },
+            )
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            SettingsRow(
+                "通知",
+                if (permissions.notifications) "已开启" else "已关闭",
+                onClick = {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    if (!context.openScreen(intent)) context.openScreen(appDetails, onError)
+                },
+            )
+        }
+        SettingsGroup("外观") {
+            SettingsRow("明暗模式", appearance.mode.label, onClick = { editor = AppearanceEditor.Mode })
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            SettingsRow(
+                "主题色",
+                appearance.accent?.let { "#%06X".format(it and 0xFFFFFF) } ?: defaultAccentLabel(),
+                onClick = { editor = AppearanceEditor.Accent },
+            )
+        }
+        SettingsGroup {
+            SettingsRow("关于 Osmo Link", "作者、版本和源代码", onClick = onAbout)
+        }
+    }
+
+    when (editor) {
+        AppearanceEditor.Mode -> ThemeModeDialog(
+            current = appearance.mode,
+            onSelect = { mode ->
+                onAppearanceChange(appearance.copy(mode = mode))
+                editor = null
+            },
+            onDismiss = { editor = null },
+        )
+        AppearanceEditor.Accent -> AccentDialog(
+            current = appearance.accent,
+            onSelect = { accent ->
+                onAppearanceChange(appearance.copy(accent = accent))
+                editor = null
+            },
+            onDismiss = { editor = null },
+        )
+        null -> Unit
+    }
+}
+
+@Composable
+internal fun AboutScreen(onBack: () -> Unit, onError: (String) -> Unit) {
+    val context = LocalContext.current
+    SettingsPage("关于 Osmo Link", onBack) {
+        Text("Osmo Link", style = MaterialTheme.typography.headlineMedium)
+        SettingsGroup {
+            SettingsRow("作者", "CakeAL")
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            SettingsRow("版本", BuildConfig.VERSION_NAME)
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            SettingsRow("GitHub", "CakeAL/osmo-link-rs", onClick = {
+                context.openScreen(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/CakeAL/osmo-link-rs")),
+                    onError,
+                )
+            })
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        TopAppBar(
+            modifier = Modifier.widthIn(max = 560.dp),
+            title = { Text(title) },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(painterResource(R.drawable.ic_ui_back), contentDescription = "返回")
+                }
+            },
+            windowInsets = WindowInsets(0, 0, 0, 0),
+        )
+        Column(
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(title: String? = null, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (title != null) {
+            Text(title, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.titleSmall)
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        modifier = if (onClick == null) Modifier else Modifier.clickable(role = Role.Button, onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+@Composable
+private fun ThemeModeDialog(current: ThemeMode, onSelect: (ThemeMode) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("明暗模式") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                for (mode in ThemeMode.entries) {
+                    ListItem(
+                        headlineContent = { Text(mode.label) },
+                        leadingContent = { RadioButton(selected = current == mode, onClick = null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.selectable(
+                            selected = current == mode,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(mode) },
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun AccentDialog(current: Int?, onSelect: (Int?) -> Unit, onDismiss: () -> Unit) {
+    var hex by rememberSaveable { mutableStateOf(current?.let { "%06X".format(it and 0xFFFFFF) }.orEmpty()) }
+    val accent = hex.trim().removePrefix("#").takeIf(RGB_HEX::matches)
+        ?.let { 0xFF000000.toInt() or it.toInt(16) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("主题色") },
+        text = {
+            OutlinedTextField(
+                value = hex,
+                onValueChange = { hex = it },
+                label = { Text("十六进制色值") },
+                placeholder = { Text("#815511") },
+                supportingText = { Text("输入 6 位 RGB 色值，例如 #815511") },
+                leadingIcon = if (accent != null) {
+                    { Box(Modifier.size(22.dp).background(Color(accent), CircleShape)) }
+                } else {
+                    null
+                },
+                isError = hex.isNotBlank() && accent == null,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { accent?.let(onSelect) }, enabled = accent != null) {
+                Text("应用")
+            }
+        },
+        dismissButton = { TextButton(onClick = { onSelect(null) }) { Text("恢复默认") } },
+    )
+}
+
+private fun defaultAccentLabel(): String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "壁纸配色" else "默认琥珀色"
+
+private fun Context.openScreen(intent: Intent): Boolean = try {
+    startActivity(intent)
+    true
+} catch (_: ActivityNotFoundException) {
+    false
+} catch (_: SecurityException) {
+    false
+}
+
+private fun Context.openScreen(intent: Intent, onError: (String) -> Unit) {
+    if (!openScreen(intent)) onError("无法打开此页面")
+}

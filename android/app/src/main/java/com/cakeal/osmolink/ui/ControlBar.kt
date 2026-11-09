@@ -4,12 +4,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,6 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.cakeal.osmolink.data.UiState
 
@@ -28,119 +36,86 @@ internal fun ControlBar(
     state: UiState,
     onShutter: () -> Unit,
     onRecord: () -> Unit,
-    onGpsToggle: (Boolean) -> Unit,
 ) {
     val photoMode = state.status.modeName in PHOTO_MODES
+    val pending = state.pendingAction != null
+    val enabled = state.connected && !pending
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
+            contentAlignment = Alignment.Center,
         ) {
-            if (photoMode) {
-                Spacer(Modifier.size(56.dp))
-            } else {
-                CircleAction(
-                    label = "快门",
-                    enabled = state.connected && state.pendingAction == null,
-                    active = false,
-                    onClick = onShutter,
-                )
-            }
-            BigAction(
+            CaptureAction(
+                modifier = Modifier.widthIn(min = 112.dp).padding(vertical = 8.dp),
                 photoMode = photoMode,
-                capturing = state.status.capturing,
-                pending = state.pendingAction != null,
-                enabled = state.connected,
+                recording = state.status.isRecording,
+                pending = pending,
+                enabled = enabled,
                 onClick = if (photoMode) onShutter else onRecord,
-            )
-            CircleAction(
-                label = if (state.gpsEnabled) "定位中" else "定位",
-                enabled = state.connected || state.gpsEnabled,
-                active = state.gpsEnabled,
-                onClick = { onGpsToggle(!state.gpsEnabled) },
             )
         }
     }
 }
 
 @Composable
-private fun BigAction(
+private fun CaptureAction(
+    modifier: Modifier,
     photoMode: Boolean,
-    capturing: Boolean,
+    recording: Boolean,
     pending: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val accent = if (photoMode) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.error
+    val colors = MaterialTheme.colorScheme
+    val accent = when {
+        !enabled && !pending -> colors.outline
+        photoMode -> colors.primary
+        else -> colors.error
     }
-    Surface(
-        onClick = onClick,
-        enabled = enabled && !pending,
-        shape = CircleShape,
-        color = Color.Transparent,
-        border = BorderStroke(3.dp, if (enabled) accent else MaterialTheme.colorScheme.outline),
-        modifier = Modifier.size(88.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            when {
-                pending -> CircularProgressIndicator(
-                    modifier = Modifier.size(30.dp),
-                    color = accent,
-                    strokeWidth = 3.dp,
-                )
-                photoMode -> Box(Modifier.size(62.dp).background(accent, CircleShape))
-                capturing -> Box(
-                    Modifier
-                        .size(28.dp)
-                        .background(accent, RoundedCornerShape(6.dp)),
-                )
-                else -> Box(Modifier.size(62.dp).background(accent, CircleShape))
-            }
-        }
-    }
-}
-
-@Composable
-private fun CircleAction(
-    label: String,
-    enabled: Boolean,
-    active: Boolean,
-    onClick: () -> Unit,
-) {
     Surface(
         onClick = onClick,
         enabled = enabled,
-        shape = CircleShape,
-        color = if (active) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        },
-        contentColor = if (active) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
-        border = BorderStroke(
-            1.dp,
-            if (active) {
-                MaterialTheme.colorScheme.secondary
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            },
-        ),
-        modifier = Modifier.size(56.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = Color.Transparent,
+        contentColor = accent,
+        modifier = modifier.semantics { role = Role.Button },
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                border = BorderStroke(2.dp, accent),
+                color = Color.Transparent,
+                modifier = Modifier.size(64.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    when {
+                        pending -> CircularProgressIndicator(
+                            modifier = Modifier.size(26.dp),
+                            color = accent,
+                            strokeWidth = 3.dp,
+                        )
+                        recording -> Box(Modifier.size(22.dp).background(accent, MaterialTheme.shapes.extraSmall))
+                        else -> Box(Modifier.size(46.dp).background(accent, CircleShape))
+                    }
+                }
+            }
+            Text(
+                text = when {
+                    photoMode -> "拍照"
+                    recording -> "停止录像"
+                    else -> "开始录像"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

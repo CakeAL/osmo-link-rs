@@ -272,3 +272,31 @@ files were not available for hardware verification.
 
 `cargo fmt --all --check`, `cargo test --workspace` (18 tests) and
 `cargo clippy --workspace --all-targets -- -D warnings` pass.
+
+## Android: Material You, settings and capture controls
+
+Reworked the scan, pairing and control screens using Material 3 surfaces and
+system-bar insets. The capture control dispatches shutter or record commands
+according to the camera mode. Status details collapse below the GPS row, and
+temperature warnings remain visible. Android sends and displays verification
+code 2333 during pairing.
+
+Added settings for system permission screens, system/dark/light appearance,
+a custom RGB theme seed and an About page. Appearance choices persist locally.
+GPS starts once per new connection when precise location is available. Turning
+GPS off during the session prevents an automatic restart on activity recreation.
+
+The foreground service requests the active camera and location types. Android
+16+ recordings request a Live Update when eligible. If construction or posting
+fails, the service falls back to the ongoing notification with its chronometer.
+The Xiaomi compatibility path uses the ongoing notification.
+
+Rust fmt, workspace tests, strict Clippy and the iOS and Android cross-checks
+pass. Android unit tests and both debug and R8 release builds pass.
+
+An API 37 emulator run with simulated camera events verified theme settings
+across activity recreation, the 2333 pairing dialog, the mode-specific capture
+button, GPS auto-start and manual stop, and the transition between a promoted
+recording notification and the ordinary ongoing notification. Camera pairing,
+GPS data in captured video and Xiaomi notification presentation still require
+hardware verification.

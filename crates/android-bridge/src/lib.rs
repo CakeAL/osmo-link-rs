@@ -341,6 +341,7 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeConnect<
         let mut saved = load_saved(&dir);
         let first_time = !saved.paired.contains(&device.id);
         let mut options = ConnectOptions::new(saved.identity);
+        options.verification_code = 2333;
         options.verification_mode = if first_time {
             VerificationMode::Required
         } else {

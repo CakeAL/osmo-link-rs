@@ -39,12 +39,14 @@ class NotificationContentTest {
                 deviceName = "Cam",
                 status = CameraStatus(
                     modeName = "Photo",
+                    capturing = true,
                     hasData = true,
                     remainingPhotos = 123,
                     battery = 66,
                 ),
             ),
         )
+        assertEquals("Cam · 已连接", content.title)
         assertTrue(content.text.contains("剩余 123 张"))
     }
 

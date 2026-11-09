@@ -196,7 +196,7 @@ CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举�
 原生 Compose 应用位于 [android](android)，Rust core 以 JNI 共享库接入：
 
 - `crates/android-bridge`：JNI 层（cdylib `libosmo_bridge.so`），扫描、连接、命令与事件。
-- `android/app`：Kotlin 单页深色 HUD，含权限、配对、GPS 注入与前台服务。
+- `android/app`：Kotlin Material You 遥控界面，含权限管理、配对、GPS 注入与前台服务。
 - `android/btleplug-jni`：内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR）。
 
 构建需要 `aarch64-linux-android` target、Android NDK 29 与 cargo-ndk：
@@ -212,12 +212,14 @@ Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
 也可用 `ANDROID_NDK_HOME` 指定。
 
 首次运行授予「附近设备/位置」权限，唤醒相机并开启无线连接后搜索；
-首次配对需在相机屏幕确认 4 位配对码。定位开关按 100ms 目标间隔发送手机定位，
-实际频率由系统定位决定。
+Android 首次配对需在相机屏幕确认配对码 `2333`。控制页底部的圆形按钮按当前模式执行拍照或启停录像。
+连接后，在精确位置权限和系统定位可用时默认开启定位注入。定位按 100ms 目标间隔发送，
+实际频率由系统定位决定。设置页可管理权限、切换明暗模式并自定义主题色，默认使用系统外观和壁纸配色
+（Android 12 之前使用琥珀色）。
 
 连接或开启定位期间会运行前台服务，常驻通知显示当前模式、录制时长、电量与定位状态，
 并提供「断开」「停止定位」动作；退出界面后连接与定位继续工作。
-录制中在 Android 16+ 会以 Live Update 呈现（状态栏胶囊/锁屏卡片），旧版本退回普通常驻通知。
+录制时在支持的 Android 16+ 设备上申请 Live Update。旧系统、小米机型或无法提升时使用普通常驻通知。
 
 详细结构、约束与排错见 [Android 文档](docs/android.md)。
 iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-apple-ios`

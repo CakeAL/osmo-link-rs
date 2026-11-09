@@ -24,6 +24,8 @@ class ControllerViewModel : ViewModel() {
 
     fun shutter() = OsmoRepository.shutter()
 
+    fun startDefaultGps() = OsmoRepository.startDefaultGps()
+
     fun setGps(enabled: Boolean) = OsmoRepository.setGps(enabled)
 
     fun notify(message: String) = OsmoRepository.notify(message)

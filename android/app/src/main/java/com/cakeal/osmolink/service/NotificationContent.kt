@@ -3,6 +3,7 @@ package com.cakeal.osmolink.service
 import com.cakeal.osmolink.data.UiState
 import com.cakeal.osmolink.ui.PHOTO_MODES
 import com.cakeal.osmolink.ui.formatRemainingDuration
+import com.cakeal.osmolink.ui.isRecording
 import com.cakeal.osmolink.ui.modeLabel
 
 /** Plain text for the persistent notification, kept free of Android types. */
@@ -11,7 +12,7 @@ internal data class NotificationContent(val title: String, val text: String)
 internal fun notificationContent(state: UiState): NotificationContent {
     val name = state.deviceName.ifBlank { "相机" }
     val title = when {
-        state.connected && state.status.capturing -> "$name · 录制中"
+        state.connected && state.status.isRecording -> "$name · 录制中"
         state.connected -> "$name · 已连接"
         state.gpsEnabled -> "Osmo Link · 定位注入"
         else -> "Osmo Link"

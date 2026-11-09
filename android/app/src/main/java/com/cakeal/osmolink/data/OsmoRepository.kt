@@ -32,6 +32,7 @@ object OsmoRepository : BridgeListener {
     private var attached = false
     private var serviceRunning = false
     private var gps: GpsTracker? = null
+    private var defaultGpsPending = false
     private val fixTimes = ArrayDeque<Long>()
 
     /** Called once from [com.cakeal.osmolink.OsmoApp]. */
@@ -105,17 +106,22 @@ object OsmoRepository : BridgeListener {
         }
     }
 
+    @Synchronized
+    fun startDefaultGps() {
+        if (defaultGpsPending && hasPreciseLocation()) {
+            setGps(true)
+        }
+    }
+
+    @Synchronized
     fun setGps(enabled: Boolean) {
+        defaultGpsPending = false
         if (!enabled) {
             stopGps()
             return
         }
-        if (gps != null) return
-        if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (!_state.value.connected || gps != null) return
+        if (!hasPreciseLocation()) {
             update { it.copy(message = "定位注入需要位置权限") }
             return
         }
@@ -150,7 +156,13 @@ object OsmoRepository : BridgeListener {
         }
     }
 
+    private fun hasPreciseLocation(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    @Synchronized
     fun stopGps() {
+        defaultGpsPending = false
         gps?.stop()
         gps = null
         OsmoNative.nativeGpsStop()
@@ -168,7 +180,9 @@ object OsmoRepository : BridgeListener {
         update { it.copy(message = null) }
     }
 
+    @Synchronized
     private fun stopGpsInternal() {
+        defaultGpsPending = false
         gps?.stop()
         gps = null
         fixTimes.clear()
@@ -221,6 +235,7 @@ object OsmoRepository : BridgeListener {
                 )
             }
             "connected" -> update {
+                defaultGpsPending = true
                 it.copy(
                     connected = true,
                     connecting = false,

@@ -20,6 +20,7 @@ import com.cakeal.osmolink.MainActivity
 import com.cakeal.osmolink.R
 import com.cakeal.osmolink.data.OsmoRepository
 import com.cakeal.osmolink.data.UiState
+import com.cakeal.osmolink.ui.isRecording
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,8 +40,10 @@ import kotlinx.coroutines.launch
  */
 class OsmoService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var foregroundStarted = false
+    private var foregroundTypes = 0
     private var lastContent: NotificationContent? = null
+    private var lastPromotionRequested = false
+    private var promotionFailed = false
     private var recordingStartedAt: Long? = null
 
     override fun onCreate() {
@@ -48,13 +51,13 @@ class OsmoService : Service() {
         createChannel()
         scope.launch {
             OsmoRepository.state.collect { state ->
-                if (foregroundStarted) updateNotification(state)
+                if (foregroundTypes != 0) updateNotification(state)
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureForeground()
+        updateNotification(OsmoRepository.state.value)
         when (intent?.action) {
             ACTION_DISCONNECT -> OsmoRepository.disconnect()
             ACTION_STOP_GPS -> OsmoRepository.stopGps()
@@ -70,43 +73,52 @@ class OsmoService : Service() {
         super.onDestroy()
     }
 
-    private fun ensureForeground() {
-        val state = OsmoRepository.state.value
-        try {
-            startForeground(NOTIFICATION_ID, buildNotification(state), TYPES)
-            foregroundStarted = true
-            lastContent = notificationContent(state)
-        } catch (error: RuntimeException) {
-            // Missing permission or a background-start restriction: give up
-            // quietly rather than crashing the app.
-            Log.w(TAG, "Unable to enter foreground", error)
-            stopSelf()
-        }
-    }
-
     private fun updateNotification(state: UiState) {
-        val content = notificationContent(state)
-        if (content == lastContent) return
-        lastContent = content
-        try {
-            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification(state))
-        } catch (error: Throwable) {
-            // A broken OEM notification stack must not take down the app.
-            Log.w(TAG, "Unable to update notification", error)
+        val types = foregroundTypes(state)
+        if (types == 0) {
+            stopSelf()
+            return
         }
-    }
-
-    private fun buildNotification(state: UiState): Notification {
         val content = notificationContent(state)
         val startedAt = recordingStart(state)
-        val live = if (startedAt != null && canPromoteLiveUpdate()) {
-            runCatching { buildLiveUpdate(content, state, startedAt) }
-                .onFailure { Log.w(TAG, "Live update failed; using standard notification", it) }
-                .getOrNull()
-        } else {
-            null
+        val requestPromotion = startedAt != null && !promotionFailed && canPromoteLiveUpdate()
+        if (types == foregroundTypes && content == lastContent && requestPromotion == lastPromotionRequested) return
+
+        fun post(notification: Notification) {
+            if (types == foregroundTypes) {
+                NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+            } else {
+                startForeground(NOTIFICATION_ID, notification, types)
+                foregroundTypes = types
+            }
         }
-        return live ?: buildCompatNotification(content, state, startedAt)
+
+        val promoted = if (requestPromotion) {
+            runCatching { postLiveUpdate(content, state, startedAt, ::post) }.getOrElse {
+                promotionFailed = true
+                Log.w(TAG, "Live update failed; using standard notification", it)
+                false
+            }
+        } else {
+            false
+        }
+        if (!promoted) {
+            try {
+                post(buildCompatNotification(content, state, startedAt))
+            } catch (error: RuntimeException) {
+                Log.w(TAG, "Unable to publish foreground notification", error)
+                if (foregroundTypes == 0) stopSelf()
+                return
+            }
+        }
+        lastContent = content
+        lastPromotionRequested = requestPromotion && !promotionFailed
+    }
+
+    private fun foregroundTypes(state: UiState): Int {
+        val camera = if (state.connected) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
+        val location = if (state.gpsEnabled) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+        return camera or location
     }
 
     private fun buildCompatNotification(
@@ -139,6 +151,19 @@ class OsmoService : Service() {
             builder.addAction(0, "停止定位", serviceAction(ACTION_STOP_GPS, 2))
         }
         return builder.build()
+    }
+
+    private fun postLiveUpdate(
+        content: NotificationContent,
+        state: UiState,
+        startedAt: Long,
+        post: (Notification) -> Unit,
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < 36) return false
+        val notification = buildLiveUpdate(content, state, startedAt)
+        if (!notification.hasPromotableCharacteristics()) return false
+        post(notification)
+        return true
     }
 
     @RequiresApi(36)
@@ -186,7 +211,7 @@ class OsmoService : Service() {
     }
 
     private fun recordingStart(state: UiState): Long? {
-        if (!state.status.capturing) {
+        if (!state.connected || !state.status.isRecording) {
             recordingStartedAt = null
             return null
         }
@@ -238,11 +263,6 @@ class OsmoService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_DISCONNECT = "com.cakeal.osmolink.action.DISCONNECT"
         private const val ACTION_STOP_GPS = "com.cakeal.osmolink.action.STOP_GPS"
-
-        /** Android 14+ requires declared types; minSdk 29 supports the typed call. */
-        private const val TYPES =
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
 
         fun start(context: Context): Boolean = try {
             ContextCompat.startForegroundService(context, Intent(context, OsmoService::class.java))

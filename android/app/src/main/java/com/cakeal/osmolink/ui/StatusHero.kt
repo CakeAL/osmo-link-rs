@@ -1,16 +1,13 @@
 package com.cakeal.osmolink.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,58 +23,60 @@ import com.cakeal.osmolink.data.UiState
 @Composable
 internal fun StatusHero(state: UiState) {
     val status = state.status
+    val photoMode = status.modeName in PHOTO_MODES
+    val recording = status.isRecording
+    val colors = MaterialTheme.colorScheme
+    val contentColor = if (recording) colors.onErrorContainer else colors.onPrimaryContainer
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = if (recording) colors.errorContainer else colors.primaryContainer,
+            contentColor = contentColor,
+        ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = if (status.hasData) formatDuration(status.recordSeconds) else "--:--",
-                style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (status.capturing) {
-                    Box(
-                        Modifier
-                            .size(8.dp)
-                            .background(MaterialTheme.colorScheme.error, CircleShape),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "REC",
-                        style = MaterialTheme.typography.labelSmall.mono(),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.width(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (recording) {
+                    Box(Modifier.size(8.dp).background(contentColor, CircleShape))
                 }
                 Text(
-                    text = stateLabel(status.stateName),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = when {
+                        !status.hasData -> "等待相机状态"
+                        recording -> "录制中"
+                        else -> stateLabel(status.stateName)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
-            Spacer(Modifier.height(6.dp))
             Text(
-                text = listOf(
-                    modeLabel(status.modeName),
-                    status.resolution,
-                    status.fps,
-                ).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "等待相机状态" },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = when {
+                    photoMode -> modeLabel(status.modeName)
+                    status.hasData -> formatDuration(status.recordSeconds)
+                    else -> "--:--"
+                },
+                style = if (photoMode) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayMedium,
                 textAlign = TextAlign.Center,
             )
+            if (status.hasData) {
+                val format = listOf(status.resolution, status.fps).filter { it.isNotBlank() }.joinToString(" · ")
+                if (format.isNotEmpty()) {
+                    Text(format, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
+                val remaining = when {
+                    photoMode -> "剩余 ${status.remainingPhotos} 张照片"
+                    status.remainingSeconds > 0 -> "剩余 ${formatRemainingDuration(status.remainingSeconds)}"
+                    else -> "剩余时长 —"
+                }
+                Text(remaining, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }

@@ -10,6 +10,9 @@ import com.cakeal.osmolink.data.CameraStatus
 /** Modes where the shutter, not start/stop recording, is the primary action. */
 internal val PHOTO_MODES = setOf("Photo", "PanoramicPhoto", "SubjectTracking")
 
+internal val CameraStatus.isRecording: Boolean
+    get() = capturing && modeName !in PHOTO_MODES
+
 /** Camera metrics use a monospace face inside the Material 3 type scale. */
 internal fun TextStyle.mono(): TextStyle = copy(fontFamily = FontFamily.Monospace)
 

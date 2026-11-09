@@ -1,7 +1,9 @@
 # Android 应用
 
 原生 Kotlin + Jetpack Compose 遥控界面，通过 JNI 调用同一个 `osmo-core`。
-界面为单页深色 HUD：未连接时是扫描页，连接后同一屏变为遥控台。
+未连接时显示相机扫描页，连接后显示遥控台。两处均可打开设置。
+界面使用 Material 3，默认跟随系统明暗和壁纸配色（Android 12+）。
+设置可选择暗色或浅色、输入六位 RGB 色值或恢复默认配色。
 
 ## 结构
 
@@ -64,10 +66,10 @@ BLE 连接已经丢失。
 
 录制中在 Android 16+ 会申请 Live Update（`Notification.ProgressStyle`、
 `setRequestPromotedOngoing`、短文本 `REC`），系统以状态栏胶囊/锁屏卡片呈现；
-用户可在系统设置关闭提升，`canPostPromotedNotifications()` 为 false 时自动退回普通通知。
-录制时长使用原生 chronometer，不依赖状态推送频率。
-小米 ROM 目前不启用 promoted 路径（厂商实现未验证），直接使用普通通知；
-Live Update 构建失败也会自动退回，不会影响前台服务。
+系统关闭提升、通知不满足提升条件或发布失败时，自动退回带计时的普通常驻通知。
+录制时长使用系统计时器，不依赖状态推送频率。
+小米 ROM 沿用普通通知。此前机型在走 Android 提升路径时发生过崩溃；小米超级岛的
+[厂商接入](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2132)需要另行适配和审核。
 
 Android 12+ 不允许从后台启动前台服务，所以服务只在用户于界面内连接/开启定位时启动。
 Android 13+ 首次连接后会请求通知权限；拒绝只会隐藏通知，服务仍运行。
@@ -78,9 +80,14 @@ Android 13+ 首次连接后会请求通知权限；拒绝只会隐藏通知，�
 
 1. 授予「附近设备」与「位置信息」权限（Android 12+ 为运行时权限）。
 2. 唤醒相机、开启无线连接，断开其它遥控器 / Mimo App。
-3. 点「搜索相机」，选择设备；首次配对在相机屏幕确认 4 位配对码。
-4. 连接后选择模式、按 REC 启停录制，或按快门拍照。
-5. 打开「定位注入」后，手机定位按 100ms 目标间隔发送给相机。
+3. 点「搜索相机」，选择设备；首次配对在相机屏幕确认 `2333`。
+4. 连接后选择模式。圆形主按钮在视频模式启停录制，在拍照模式拍照。
+5. 精确位置权限和系统定位可用时，每次新连接默认开启定位注入。可用控制页开关或通知中的
+   「停止定位」关闭本次连接的推送。录像过程中开启定位只影响之后的内容。
+
+设置页的权限管理可打开蓝牙、位置和通知的系统设置。在应用的位置信息权限中可手动选择
+「始终允许」。从可见界面启动的定位前台服务可在退到后台后继续运行。
+关于页显示作者 CakeAL、安装版本和 GitHub 链接。
 
 GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率取决于设备；
 界面显示实际收到的频率，不假装固定 10Hz。没有卫星数或定位无效的样本会被丢弃。
@@ -91,7 +98,8 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
   `FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`；服务类型在 manifest 固定为
   `connectedDevice|location`，Android 14+ 必须与 `startForeground` 参数一致。
 - Live Update：Android 16+ 需要 `POST_PROMOTED_NOTIFICATIONS`，并先用
-  `canPostPromotedNotifications()` 判断用户是否允许。
+  `canPostPromotedNotifications()` 判断用户是否允许，发布前检查通知的提升资格。
+  运行时根据相机连接与定位状态启用对应服务类型。
 - 扫描：API 31+ 需要 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；旧版本需要定位权限。
   本应用始终同时请求定位，因为 GPS 注入本身需要它。
 - **不要预检 adapter 状态**：btleplug 的 Android 后端把 `adapter_state()` 固定返回
@@ -113,12 +121,14 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 - 暂停在模拟器无可用 BLE 适配器时给出 adapter-not-ready 错误；
 - 前台服务启动成功：`dumpsys` 显示 `isForeground=true`、`types=0x18`
   （connectedDevice|location），通知标题/正文符合预期。
-- Android 16 Live Update 路径：API 37 模拟器上通知带 `PROMOTED_ONGOING`、
-  `ProgressStyle` 模板与 `shortCriticalText=REC`。
+- 使用模拟相机状态验证配对码弹窗、主题色和明暗设置持久化、拍照与录像按键、
+  定位默认开启和手动关闭。
+- Android Live Update 路径：API 37 模拟器上录制通知带 `PROMOTED_ONGOING`；
+  模拟拍照模式时恢复为普通常驻通知。
 
 未验证（需要真机 + 相机）：
 
-- 真机扫描、配对、录制、模式切换、状态推送的端到端行为；
+- 真机扫描、固定码 `2333` 首次配对、录制、模式切换、状态推送的端到端行为；
 - GPS 是否真正写入视频素材（发送完成不等于落盘）；
 - 真机长时间后台、Doze 与厂商省电策略下的存活；
 - 真实连接状态下的通知刷新（模拟器没有 BLE，验证时使用临时演示状态）；
