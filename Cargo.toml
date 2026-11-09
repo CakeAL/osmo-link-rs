@@ -3,7 +3,9 @@ members = [
     "crates/osmo-core",
     "crates/macos-cli",
     "crates/android-bridge",
+    "crates/mobile-status",
     "crates/osmo_gps_extract_gpx",
+    "ios/Bridge",
 ]
 resolver = "3"
 

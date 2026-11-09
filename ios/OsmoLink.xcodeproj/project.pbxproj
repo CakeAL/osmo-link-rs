@@ -1,0 +1,286 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05A010000000000000000041 /* CameraModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000021 /* CameraModels.swift */; };
+		05A010000000000000000042 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000022 /* CameraView.swift */; };
+		05A010000000000000000043 /* OsmoLinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000023 /* OsmoLinkApp.swift */; };
+		05A010000000000000000044 /* RecordingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000024 /* RecordingActivity.swift */; };
+		05A010000000000000000045 /* RemoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000025 /* RemoteStore.swift */; };
+		05A010000000000000000046 /* RemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000026 /* RemoteView.swift */; };
+		05A010000000000000000047 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000027 /* SettingsView.swift */; };
+		05A010000000000000000048 /* RecordingAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A01000000000000000002A /* RecordingAttributes.swift */; };
+		05A010000000000000000049 /* RecordingAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A01000000000000000002A /* RecordingAttributes.swift */; };
+		05A01000000000000000004A /* RecordingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A01000000000000000002B /* RecordingWidget.swift */; };
+		05A01000000000000000004B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000028 /* Assets.xcassets */; };
+		05A01000000000000000004C /* RecordingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000005 /* RecordingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		05A01000000000000000000A /* Widget proxy */ = {isa = PBXContainerItemProxy; containerPortal = 05A010000000000000000001 /* Project object */; proxyType = 1; remoteGlobalIDString = 05A010000000000000000003; remoteInfo = RecordingWidget; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		05A010000000000000000034 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (05A01000000000000000004C /* RecordingWidget.appex in Embed App Extensions */, );
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		05A010000000000000000004 /* OsmoLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OsmoLink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		05A010000000000000000005 /* RecordingWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordingWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		05A010000000000000000021 /* CameraModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraModels.swift; sourceTree = "<group>"; };
+		05A010000000000000000022 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		05A010000000000000000023 /* OsmoLinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OsmoLinkApp.swift; sourceTree = "<group>"; };
+		05A010000000000000000024 /* RecordingActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivity.swift; sourceTree = "<group>"; };
+		05A010000000000000000025 /* RemoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteStore.swift; sourceTree = "<group>"; };
+		05A010000000000000000026 /* RemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteView.swift; sourceTree = "<group>"; };
+		05A010000000000000000027 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		05A010000000000000000028 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		05A010000000000000000029 /* App Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		05A01000000000000000002A /* RecordingAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAttributes.swift; sourceTree = "<group>"; };
+		05A01000000000000000002B /* RecordingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWidget.swift; sourceTree = "<group>"; };
+		05A01000000000000000002C /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		05A01000000000000000002D /* OsmoBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OsmoBridge.h; sourceTree = "<group>"; };
+		05A01000000000000000002E /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		05A010000000000000000032 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		05A010000000000000000036 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		05A010000000000000000010 = {isa = PBXGroup; children = (05A010000000000000000011 /* App */, 05A010000000000000000012 /* Shared */, 05A010000000000000000013 /* RecordingWidget */, 05A010000000000000000014 /* Bridge */, 05A010000000000000000015 /* Products */, ); sourceTree = "<group>"; };
+		05A010000000000000000011 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				05A010000000000000000021 /* CameraModels.swift */,
+				05A010000000000000000022 /* CameraView.swift */,
+				05A010000000000000000023 /* OsmoLinkApp.swift */,
+				05A010000000000000000024 /* RecordingActivity.swift */,
+				05A010000000000000000025 /* RemoteStore.swift */,
+				05A010000000000000000026 /* RemoteView.swift */,
+				05A010000000000000000027 /* SettingsView.swift */,
+				05A010000000000000000028 /* Assets.xcassets */,
+				05A010000000000000000029 /* Info.plist */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		05A010000000000000000012 /* Shared */ = {isa = PBXGroup; children = (05A01000000000000000002A /* RecordingAttributes.swift */, ); path = Shared; sourceTree = "<group>"; };
+		05A010000000000000000013 /* RecordingWidget */ = {isa = PBXGroup; children = (05A01000000000000000002B /* RecordingWidget.swift */, 05A01000000000000000002C /* Info.plist */, ); path = RecordingWidget; sourceTree = "<group>"; };
+		05A010000000000000000014 /* Bridge */ = {isa = PBXGroup; children = (05A01000000000000000002D /* OsmoBridge.h */, 05A01000000000000000002E /* build.sh */, ); path = Bridge; sourceTree = "<group>"; };
+		05A010000000000000000015 /* Products */ = {isa = PBXGroup; children = (05A010000000000000000004 /* OsmoLink.app */, 05A010000000000000000005 /* RecordingWidget.appex */, ); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		05A010000000000000000002 /* OsmoLink */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 05A010000000000000000052 /* OsmoLink configurations */;
+			buildPhases = (05A010000000000000000030 /* Build Rust Bridge */, 05A010000000000000000031 /* Sources */, 05A010000000000000000032 /* Frameworks */, 05A010000000000000000033 /* Resources */, 05A010000000000000000034 /* Embed App Extensions */, );
+			buildRules = ();
+			dependencies = (05A01000000000000000000B /* Widget dependency */, );
+			name = OsmoLink;
+			productName = OsmoLink;
+			productReference = 05A010000000000000000004 /* OsmoLink.app */;
+			productType = "com.apple.product-type.application";
+		};
+		05A010000000000000000003 /* RecordingWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 05A010000000000000000053 /* RecordingWidget configurations */;
+			buildPhases = (05A010000000000000000035 /* Sources */, 05A010000000000000000036 /* Frameworks */, 05A010000000000000000037 /* Resources */, );
+			buildRules = ();
+			dependencies = ();
+			name = RecordingWidget;
+			productName = RecordingWidget;
+			productReference = 05A010000000000000000005 /* RecordingWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		05A010000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2720; };
+			buildConfigurationList = 05A010000000000000000051 /* Project configurations */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = ("zh-Hans", Base, );
+			mainGroup = 05A010000000000000000010;
+			productRefGroup = 05A010000000000000000015 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (05A010000000000000000002 /* OsmoLink */, 05A010000000000000000003 /* RecordingWidget */, );
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		05A010000000000000000033 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (05A01000000000000000004B /* Assets.xcassets in Resources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		05A010000000000000000037 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		05A010000000000000000030 /* Build Rust Bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ("$(SRCROOT)/Bridge/build.sh", );
+			name = "Build Rust Bridge";
+			outputPaths = ("$(BUILT_PRODUCTS_DIR)/libosmo_ios.a", );
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "exec /bin/bash \"$SRCROOT/Bridge/build.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		05A010000000000000000031 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				05A010000000000000000041 /* CameraModels.swift in Sources */,
+				05A010000000000000000042 /* CameraView.swift in Sources */,
+				05A010000000000000000043 /* OsmoLinkApp.swift in Sources */,
+				05A010000000000000000044 /* RecordingActivity.swift in Sources */,
+				05A010000000000000000045 /* RemoteStore.swift in Sources */,
+				05A010000000000000000046 /* RemoteView.swift in Sources */,
+				05A010000000000000000047 /* SettingsView.swift in Sources */,
+				05A010000000000000000048 /* RecordingAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		05A010000000000000000035 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (05A01000000000000000004A /* RecordingWidget.swift in Sources */, 05A010000000000000000049 /* RecordingAttributes.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		05A01000000000000000000B /* Widget dependency */ = {isa = PBXTargetDependency; target = 05A010000000000000000003 /* RecordingWidget */; targetProxy = 05A01000000000000000000A /* Widget proxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		05A010000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = "YES";
+				CODE_SIGN_STYLE = "Automatic";
+				CURRENT_PROJECT_VERSION = "1";
+				DEBUG_INFORMATION_FORMAT = "dwarf";
+				ENABLE_TESTABILITY = "YES";
+				ENABLE_USER_SCRIPT_SANDBOXING = "YES";
+				IPHONEOS_DEPLOYMENT_TARGET = "16.0";
+				MARKETING_VERSION = "0.1.0";
+				ONLY_ACTIVE_ARCH = "YES";
+				SDKROOT = "iphoneos";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = "NO";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = "6.0";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		05A010000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = "YES";
+				CODE_SIGN_STYLE = "Automatic";
+				CURRENT_PROJECT_VERSION = "1";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_USER_SCRIPT_SANDBOXING = "YES";
+				IPHONEOS_DEPLOYMENT_TARGET = "16.0";
+				MARKETING_VERSION = "0.1.0";
+				SDKROOT = "iphoneos";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = "NO";
+				SWIFT_COMPILATION_MODE = "wholemodule";
+				SWIFT_VERSION = "6.0";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		05A010000000000000000063 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "AccentColor";
+				ENABLE_USER_SCRIPT_SANDBOXING = "NO";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_FILE = "App/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
+				OTHER_LDFLAGS = "$(inherited) -losmo_ios -framework CoreBluetooth -liconv";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cakeal.osmolink";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Bridge/OsmoBridge.h";
+			};
+			name = Debug;
+		};
+		05A010000000000000000064 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "AccentColor";
+				ENABLE_USER_SCRIPT_SANDBOXING = "NO";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_FILE = "App/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
+				OTHER_LDFLAGS = "$(inherited) -losmo_ios -framework CoreBluetooth -liconv";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cakeal.osmolink";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Bridge/OsmoBridge.h";
+			};
+			name = Release;
+		};
+		05A010000000000000000065 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = "YES";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_FILE = "RecordingWidget/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = "16.1";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cakeal.osmolink.recording";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = "YES";
+			};
+			name = Debug;
+		};
+		05A010000000000000000066 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = "YES";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_FILE = "RecordingWidget/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = "16.1";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cakeal.osmolink.recording";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = "YES";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		05A010000000000000000051 /* Project configurations */ = {isa = XCConfigurationList; buildConfigurations = (05A010000000000000000061 /* Debug */, 05A010000000000000000062 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		05A010000000000000000052 /* OsmoLink configurations */ = {isa = XCConfigurationList; buildConfigurations = (05A010000000000000000063 /* Debug */, 05A010000000000000000064 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		05A010000000000000000053 /* RecordingWidget configurations */ = {isa = XCConfigurationList; buildConfigurations = (05A010000000000000000065 /* Debug */, 05A010000000000000000066 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 05A010000000000000000001 /* Project object */;
+}

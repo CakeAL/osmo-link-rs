@@ -33,9 +33,7 @@ use osmo_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-mod status;
-
-use status::{mode_catalog, status_json};
+use mobile_status::{mode_catalog, status_json};
 
 struct BridgeState {
     devices: Vec<Device>,

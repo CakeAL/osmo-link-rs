@@ -1,4 +1,4 @@
-//! JSON projections of protocol enums for the Kotlin UI.
+//! Shared JSON projections of protocol enums for the mobile apps.
 //!
 //! Labels stay in English and generic; localization belongs to the app layer.
 use osmo_core::{
@@ -39,6 +39,7 @@ pub fn status_json(status: &CameraStatus) -> Value {
     json!({
         "modeCode": status.mode.code(),
         "modeName": format!("{:?}", status.mode),
+        "photoMode": status.mode.uses_photo_parameters(),
         "stateCode": status.state.code(),
         "stateName": format!("{:?}", status.state),
         "capturing": status.is_capturing(),

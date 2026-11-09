@@ -1,7 +1,7 @@
 # osmo-link-rs
 
-最小 Rust Osmo 蓝牙遥控 core、macOS 真机调试 CLI，以及 Android 原生 App。
-一个 Cargo workspace，三个 crate：`osmo-core`、`macos-cli`、`android-bridge`。
+最小 Rust Osmo 蓝牙遥控 core、macOS 真机调试 CLI，以及 Android 和 iOS 原生 App。
+两端 App 共用 Rust 的蓝牙协议、相机控制与状态映射。
 
 ## macOS 运行
 
@@ -222,9 +222,34 @@ Android 首次配对需在相机屏幕确认配对码 `2333`。控制页底部�
 录制时在支持的 Android 16+ 设备上申请 Live Update。旧系统、小米机型或无法提升时使用普通常驻通知。
 
 详细结构、约束与排错见 [Android 文档](docs/android.md)。
-iOS 仍无 App 外壳；core 可用 `cargo check -p osmo-core --target aarch64-apple-ios`
-做类型检查；JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android`
-检查。[btleplug 平台接入文档](https://docs.rs/btleplug/0.13.5/btleplug/)。
+JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android` 检查。
+
+## iOS
+
+原生 SwiftUI 应用位于 [ios](ios)，最低支持 iOS 16.0。iOS 26 起系统导航和拍摄按钮使用
+Liquid Glass，旧系统使用原生控件和系统材质。首次搜索时授权蓝牙，选择相机后在相机端
+确认配对码 `2333`。配对身份保存在应用沙盒中。相机状态决定主按钮是拍照、开始录像还是
+停止录像。设置页提供外观选项、实时活动开关和系统权限入口。
+
+iOS 16.1 起，应用前台收到录像状态后可启动实时活动，显示拍摄模式、时长与电量。
+支持灵动岛的 iPhone 显示紧凑及展开布局，锁定屏幕也会显示实时活动。
+停止录像或断开连接会结束活动，点按活动可返回遥控页。应用在后台时能否及时收到
+相机状态，取决于系统调度及蓝牙连接。iOS 的公开定位接口不提供 DJI 协议所需的卫星数，
+因此 iOS 版暂不提供手机 GPS 注入。
+
+用 Xcode 26 或更新版本打开 [OsmoLink.xcodeproj](ios/OsmoLink.xcodeproj)，选择
+`OsmoLink` scheme。真机运行需为应用及 `RecordingWidget` 设置同一个签名团队。
+Xcode 构建阶段会编译并链接 `ios/Bridge` 的 Rust 静态库。
+
+```sh
+rustup target add aarch64-apple-ios
+open ios/OsmoLink.xcodeproj
+
+# 在 Apple Silicon 上构建 iOS 模拟器版本
+rustup target add aarch64-apple-ios-sim
+```
+
+Intel 模拟器构建使用 `x86_64-apple-ios` target。蓝牙配对、拍摄及灵动岛实机表现待验证。
 
 ## 视频 GPS 提取
 

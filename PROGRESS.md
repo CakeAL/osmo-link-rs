@@ -343,3 +343,28 @@ and ordinary back dispatch. Frame comparison measured 129 px of page movement
 for about 130 px of forward finger travel, 86 px when dragging back, and zero
 offset after cancellation. Debug, R8 release, Android unit tests and Rust
 checks passed. HyperOS gesture callbacks still need device verification.
+
+## iOS: native remote and recording Live Activity
+
+Added the SwiftUI iOS 16.0 app and the WidgetKit recording extension under
+`ios/`. The app reuses the Android mode catalog and status projection, and
+uses the Rust BLE worker through a statically linked C ABI. It keeps the
+controller identity and confirmed pairing history in Application Support.
+Capture actions check the latest camera state, and recording waits for a status
+change after the command ACK.
+
+System navigation and the capture control adopt Liquid Glass on iOS 26.
+On iOS 16.1 and later, ActivityKit presents confirmed recordings on the Lock
+Screen and on Dynamic Island devices. The system renders the timer from the
+reported elapsed time. A connection interruption replaces the timer with
+reconnect status. Stopping the recording or disconnecting ends the activity.
+Phone GPS injection is unavailable because Core Location lacks the satellite
+count required by the DJI GPS packet.
+
+Unsigned iPhone Debug and Release builds and the arm64 Simulator Debug build
+passed on Xcode 27.2. The iPhone build embeds the extension and declares iOS 16.0
+for the app and iOS 16.1 for the extension. A host smoke check decoded the 17-mode
+Rust startup event in Swift. Rust fmt, all 18 workspace tests, strict Clippy and
+the iOS device, iOS simulator and Android bridge cross-checks passed.
+Pairing, camera control, background delivery and Live Activity presentation
+still need hardware verification.

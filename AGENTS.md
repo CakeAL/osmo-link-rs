@@ -5,15 +5,18 @@
 ## 项目是什么
 
 `osmo-link-rs` 是一个最小化的 Rust 库，用公开的 DJI R SDK BLE 协议遥控 Osmo 相机
-（Action 4 为已验证机型），外加 macOS 调试 CLI 和 Android 原生 App。
+（Action 4 为已验证机型），外加 macOS 调试 CLI 和 Android、iOS 原生 App。
 
-- 一个 Cargo workspace（resolver 3，edition 2024），四个 crate：
+- 一个 Cargo workspace（resolver 3，edition 2024）：
   - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无平台专属业务代码。**
   - `macos-cli`（[crates/macos-cli](crates/macos-cli)）：命令行外壳、配对身份持久化、GPS 回放。
   - `android-bridge`（[crates/android-bridge](crates/android-bridge)）：JNI cdylib，向 Kotlin 暴露异步 JSON 事件。
+  - `ios-bridge`（[ios/Bridge](ios/Bridge)）：Rust 静态库，经 C ABI 向 SwiftUI 提供异步 JSON 事件。
+  - `mobile-status`（[crates/mobile-status](crates/mobile-status)）：两端共用的状态 JSON 投影和模式目录。
   - `osmo_gps_extract_gpx`（[crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx)）：独立 MP4 → GPX 工具，不在手机上运行。
 - `android/`（[android](android)）是独立 Gradle 工程：`:app`（Compose HUD）、
   `:btleplug-jni`（内置的 btleplug Java 支持类）。原生库由 cargo-ndk 构建。
+- `ios/`（[ios](ios)）是 Xcode 工程，包含 SwiftUI App 和 WidgetKit 录制实时活动扩展。
 
 ## 常用命令
 
@@ -49,8 +52,9 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 | [error.rs](crates/osmo-core/src/error.rs) | `Error`/`Result` |
 | [macos-cli/src/main.rs](crates/macos-cli/src/main.rs) | 命令解析、事件循环、`controller.json`、JSONL 回放 |
 | [android-bridge/src/lib.rs](crates/android-bridge/src/lib.rs) | JNI 入口、JVM 回调、扫描/连接/命令/GPS 转发 |
-| [android-bridge/src/status.rs](crates/android-bridge/src/status.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
+| [mobile-status/src/lib.rs](crates/mobile-status/src/lib.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
 | [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、`OsmoRepository`、前台服务、权限、`GpsTracker` |
+| [ios/App](ios/App)、[ios/RecordingWidget](ios/RecordingWidget) | SwiftUI 遥控、应用级连接状态、ActivityKit 与灵动岛 |
 | [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) | MP4 `djmd` 轨 GPS 提取 → GPX（`gpx` + `prost`） |
 | [docs/macos-validation.md](docs/macos-validation.md) | 真机证据与**未**验证范围 |
 | [PROGRESS.md](PROGRESS.md) | 按步骤追加的实现日志（英文） |

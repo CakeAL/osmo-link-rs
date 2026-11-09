@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 osmo-core.workspace = true
+mobile-status = { path = "../mobile-status" }
 jni = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
