@@ -6,9 +6,10 @@ junitVersion = "1.1.5"
 espressoCore = "3.5.1"
 lifecycleRuntimeKtx = "2.6.1"
 lifecycleViewmodelCompose = "2.6.1"
-activityCompose = "1.8.0"
+activityCompose = "1.9.3"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
+decompose = "3.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -26,6 +27,8 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+decompose-compose = { group = "com.arkivanov.decompose", name = "extensions-compose", version.ref = "decompose" }
+decompose-core = { group = "com.arkivanov.decompose", name = "decompose", version.ref = "decompose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -57,14 +57,14 @@ internal fun ConnectScreen(
         ) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("相机遥控", style = MaterialTheme.typography.headlineLarge)
+                    Text("Osmo Link", style = MaterialTheme.typography.headlineLarge)
                     Text(
                         text = "通过蓝牙连接 DJI Osmo 相机",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                SettingsButton(onOpenSettings)
+                SettingsButton(onOpenSettings, enabled = !state.connecting)
             }
             ScanCard(state, onScan)
             NearbyDevices(state, onConnect)

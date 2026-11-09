@@ -45,8 +45,8 @@ internal fun DisclosureRow(
 }
 
 @Composable
-internal fun SettingsButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+internal fun SettingsButton(onClick: () -> Unit, enabled: Boolean = true) {
+    IconButton(onClick = onClick, enabled = enabled) {
         Icon(painterResource(R.drawable.ic_ui_gear), contentDescription = "设置")
     }
 }

@@ -85,3 +85,10 @@ https://github.com/deviceplug/btleplug.
 The upstream Java project includes vendored JNI utility classes
 (`io.github.gedgygedgy.rust.*`) covered by the same upstream licensing. These classes
 are referenced only from native code, which is why the app keeps them through R8.
+
+## Android predictive back
+
+The Android app uses Decompose 3.5.0 for predictive back animations and its
+Essenty dependency for back gesture events. Both are licensed under Apache 2.0.
+See the upstream license files for [Decompose](https://github.com/arkivanov/Decompose/blob/3.5.0/LICENSE)
+and [Essenty](https://github.com/arkivanov/Essenty/blob/2.5.0/LICENSE).

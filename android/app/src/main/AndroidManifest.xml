@@ -32,6 +32,7 @@
     <application
         android:name=".OsmoApp"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -51,6 +52,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
 
         <service
             android:name=".service.OsmoService"

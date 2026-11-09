@@ -28,6 +28,14 @@ internal class AppPreferences(context: Context) {
     )
         private set
 
+    var compatibleBack by mutableStateOf(storage.getBoolean("compatible_back", true))
+        private set
+
+    fun updateCompatibleBack(enabled: Boolean) {
+        storage.edit().putBoolean("compatible_back", enabled).apply()
+        compatibleBack = enabled
+    }
+
     fun updateAppearance(value: Appearance) {
         val editor = storage.edit().putString("mode", value.mode.name)
         val accent = value.accent

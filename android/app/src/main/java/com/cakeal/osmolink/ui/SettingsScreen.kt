@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -35,12 +36,14 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,9 +54,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.cakeal.osmolink.BuildConfig
 import com.cakeal.osmolink.R
-import com.cakeal.osmolink.data.Appearance
+import com.cakeal.osmolink.data.AppPreferences
 import com.cakeal.osmolink.data.ThemeMode
 
 private val RGB_HEX = Regex("[0-9A-Fa-f]{6}")
@@ -62,14 +67,17 @@ private enum class AppearanceEditor { Mode, Accent }
 
 @Composable
 internal fun SettingsScreen(
-    appearance: Appearance,
-    permissions: PermissionStatus,
-    onAppearanceChange: (Appearance) -> Unit,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onAbout: () -> Unit,
     onError: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val appearance = preferences.appearance
+    var permissions by remember { mutableStateOf(context.permissionStatus()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        permissions = context.permissionStatus()
+    }
     var editor by rememberSaveable { mutableStateOf<AppearanceEditor?>(null) }
     val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
 
@@ -123,6 +131,23 @@ internal fun SettingsScreen(
                 appearance.accent?.let { "#%06X".format(it and 0xFFFFFF) } ?: defaultAccentLabel(),
                 onClick = { editor = AppearanceEditor.Accent },
             )
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            ListItem(
+                headlineContent = { Text("兼容返回动画") },
+                supportingContent = {
+                    val mode = if (preferences.compatibleBack) "应用内预见式返回" else "系统跨 Activity"
+                    Text("$mode · 下次打开设置时生效")
+                },
+                trailingContent = {
+                    Switch(checked = preferences.compatibleBack, onCheckedChange = null)
+                },
+                modifier = Modifier.toggleable(
+                    value = preferences.compatibleBack,
+                    role = Role.Switch,
+                    onValueChange = preferences::updateCompatibleBack,
+                ),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
         }
         SettingsGroup {
             SettingsRow("关于 Osmo Link", "作者、版本和源代码", onClick = onAbout)
@@ -133,7 +158,7 @@ internal fun SettingsScreen(
         AppearanceEditor.Mode -> ThemeModeDialog(
             current = appearance.mode,
             onSelect = { mode ->
-                onAppearanceChange(appearance.copy(mode = mode))
+                preferences.updateAppearance(appearance.copy(mode = mode))
                 editor = null
             },
             onDismiss = { editor = null },
@@ -141,7 +166,7 @@ internal fun SettingsScreen(
         AppearanceEditor.Accent -> AccentDialog(
             current = appearance.accent,
             onSelect = { accent ->
-                onAppearanceChange(appearance.copy(accent = accent))
+                preferences.updateAppearance(appearance.copy(accent = accent))
                 editor = null
             },
             onDismiss = { editor = null },

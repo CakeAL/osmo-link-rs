@@ -300,3 +300,46 @@ button, GPS auto-start and manual stop, and the transition between a promoted
 recording notification and the ordinary ongoing notification. Camera pairing,
 GPS data in captured video and Xiaomi notification presentation still require
 hardware verification.
+
+## Android: predictive back
+
+Settings and About use AndroidX predictive back progress to slide the current
+page away from the touched edge and reveal its parent. A cancelled gesture
+restores the current page. The remote page delegates back-to-home to Android.
+Activity Compose 1.9.3 supplies the fixes for ordinary back dispatch after
+a predictive gesture.
+
+On the API 37 emulator, injected edge gestures verified left and right preview,
+cancellation, commit, dialog dismissal and system back-to-home. Ordinary
+dispatcher back after cancellation and toolbar back also passed. Rust fmt,
+workspace tests and strict Clippy, Android unit tests, and debug and R8 release
+builds passed.
+
+## Android: system cross-activity transitions
+
+Moved Settings and About into non-exported activities in the same task as
+MainActivity. Android supplies the opening animation and predictive back
+preview. Appearance is shared at application scope. The foreground notification
+brings the existing remote activity to the front.
+
+On the API 37 emulator, the screen recording showed the system opening
+transition. Window Manager reported `TYPE_CROSS_ACTIVITY` between pages and
+`TYPE_RETURN_TO_HOME` at the remote screen. Both swipe edges, cancellation,
+dialog dismissal, shared appearance, and returning to the existing activity
+from the notification passed. Rust checks, Android unit tests, and debug and
+R8 release builds passed.
+
+## Android: opt-in compatible back animation
+
+Added a saved appearance switch for application-rendered navigation. The
+setting takes effect the next time Settings is opened. System mode continues
+to use separate activities. Compatible mode keeps Settings and About inside
+the remote activity, slides new pages in, and positions the outgoing page
+using touch coordinates from AndroidX predictive back events. An ordinary
+back event still plays a slide when the system sends only completion.
+
+The API 37 emulator passed mode switching, cancelled and committed gestures,
+and ordinary back dispatch. Frame comparison measured 129 px of page movement
+for about 130 px of forward finger travel, 86 px when dragging back, and zero
+offset after cancellation. Debug, R8 release, Android unit tests and Rust
+checks passed. HyperOS gesture callbacks still need device verification.

@@ -2,7 +2,6 @@ package com.cakeal.osmolink.ui
 
 import android.Manifest
 import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -13,10 +12,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
@@ -38,22 +35,20 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.cakeal.osmolink.ControllerViewModel
-import com.cakeal.osmolink.data.Appearance
+import com.cakeal.osmolink.data.AppPreferences
 
 private enum class PermissionTarget { Scan, Gps }
-private enum class Page { Remote, Settings, About }
 
 @Composable
 internal fun OsmoLinkApp(
     viewModel: ControllerViewModel,
-    appearance: Appearance,
-    onAppearanceChange: (Appearance) -> Unit,
+    preferences: AppPreferences,
+    onOpenSystemSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val snackbar = remember { SnackbarHostState() }
-    var page by rememberSaveable { mutableStateOf(Page.Remote) }
     var permissions by remember { mutableStateOf(context.permissionStatus()) }
     var pendingTarget by rememberSaveable { mutableStateOf<PermissionTarget?>(null) }
     var askedForNotifications by rememberSaveable { mutableStateOf(false) }
@@ -125,14 +120,11 @@ internal fun OsmoLinkApp(
         }
     }
 
-    LaunchedEffect(state.message) {
+    LaunchedEffect(state.message, resumed) {
+        if (!resumed) return@LaunchedEffect
         val message = state.message ?: return@LaunchedEffect
         snackbar.showSnackbar(message)
         viewModel.clearMessage()
-    }
-
-    BackHandler(enabled = page != Page.Remote) {
-        page = if (page == Page.About) Page.Settings else Page.Remote
     }
 
     val bottomInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
@@ -141,54 +133,59 @@ internal fun OsmoLinkApp(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
         snackbarHost = { SnackbarHost(snackbar, Modifier.windowInsetsPadding(bottomInsets)) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (page == Page.Remote) {
-                AnimatedContent(
-                    targetState = state.connected,
-                    transitionSpec = {
-                        fadeIn(tween(220)) togetherWith fadeOut(tween(160))
-                    },
-                ) { connected ->
-                    if (connected) {
-                        ControlScreen(
-                            state = state,
-                            onShutter = viewModel::shutter,
-                            onRecord = viewModel::toggleRecord,
-                            onMode = viewModel::setMode,
-                            onDisconnect = viewModel::disconnect,
-                            onGpsToggle = { enabled ->
-                                if (enabled) {
-                                    requestPermissions(PermissionTarget.Gps)
-                                } else {
-                                    viewModel.setGps(false)
-                                }
+        Box(Modifier.fillMaxSize()) {
+            PageNavigation(contentInsets = padding) { page, navigateTo ->
+                when (page) {
+                    Page.Remote -> {
+                        val onOpenSettings = {
+                            if (!viewModel.state.value.connecting) {
+                                if (preferences.compatibleBack) navigateTo(Page.Settings) else onOpenSystemSettings()
+                            }
+                        }
+                        AnimatedContent(
+                            targetState = state.connected,
+                            transitionSpec = {
+                                fadeIn(tween(220)) togetherWith fadeOut(tween(160))
                             },
-                            onOpenSettings = { page = Page.Settings },
-                        )
-                    } else {
-                        Box(Modifier.windowInsetsPadding(bottomInsets)) {
-                            ConnectScreen(
-                                state = state,
-                                onScan = { requestPermissions(PermissionTarget.Scan) },
-                                onConnect = viewModel::connect,
-                                onOpenSettings = { page = Page.Settings },
-                            )
+                        ) { connected ->
+                            if (connected) {
+                                ControlScreen(
+                                    state = state,
+                                    onShutter = viewModel::shutter,
+                                    onRecord = viewModel::toggleRecord,
+                                    onMode = viewModel::setMode,
+                                    onDisconnect = viewModel::disconnect,
+                                    onGpsToggle = { enabled ->
+                                        if (enabled) {
+                                            requestPermissions(PermissionTarget.Gps)
+                                        } else {
+                                            viewModel.setGps(false)
+                                        }
+                                    },
+                                    onOpenSettings = onOpenSettings,
+                                )
+                            } else {
+                                Box(Modifier.windowInsetsPadding(bottomInsets)) {
+                                    ConnectScreen(
+                                        state = state,
+                                        onScan = { requestPermissions(PermissionTarget.Scan) },
+                                        onConnect = viewModel::connect,
+                                        onOpenSettings = onOpenSettings,
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            } else {
-                Box(Modifier.windowInsetsPadding(bottomInsets)) {
-                    if (page == Page.About) {
-                        AboutScreen(onBack = { page = Page.Settings }, onError = viewModel::notify)
-                    } else {
+                    Page.Settings -> Box(Modifier.windowInsetsPadding(bottomInsets)) {
                         SettingsScreen(
-                            appearance = appearance,
-                            permissions = permissions,
-                            onAppearanceChange = onAppearanceChange,
-                            onBack = { page = Page.Remote },
-                            onAbout = { page = Page.About },
+                            preferences = preferences,
+                            onBack = { navigateTo(Page.Remote) },
+                            onAbout = { navigateTo(Page.About) },
                             onError = viewModel::notify,
                         )
+                    }
+                    Page.About -> Box(Modifier.windowInsetsPadding(bottomInsets)) {
+                        AboutScreen(onBack = { navigateTo(Page.Settings) }, onError = viewModel::notify)
                     }
                 }
             }
