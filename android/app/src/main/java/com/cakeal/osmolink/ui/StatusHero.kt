@@ -26,12 +26,7 @@ internal fun StatusHero(state: UiState) {
     val status = state.status
     val photoMode = status.modeName in PHOTO_MODES
     val colors = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = colors.primaryContainer,
-        contentColor = colors.onPrimaryContainer,
-    ) {
+    CameraHeroSurface {
         Column(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

@@ -81,12 +81,7 @@ internal fun ConnectScreen(
 @Composable
 private fun DiscoveryHero() {
     val colors = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = colors.primaryContainer,
-        contentColor = colors.onPrimaryContainer,
-    ) {
+    CameraHeroSurface {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

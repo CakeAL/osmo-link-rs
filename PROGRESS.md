@@ -437,3 +437,14 @@ status, and the list closes if the connection or capture state disables
 selection. The arm64 iOS Simulator Debug and unsigned iPhone Release builds
 passed. Gesture behavior on iPhone and camera mode changes still need
 hardware verification.
+
+## Android: theme-aware camera card backgrounds
+
+Added a diagonal gradient and clipped circle accents to the discovery and
+camera status cards. Both use the active Material You color scheme, including
+wallpaper colors and custom accents. The gradient shades away from the text
+luminance to preserve contrast.
+
+Verified discovery and camera layouts on the API 37 emulator, including the
+dark wallpaper palette and a custom light accent with a simulated camera.
+Android Debug, R8 release, and unit tests passed.
