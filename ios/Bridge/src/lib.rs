@@ -4,14 +4,14 @@ use std::{
     ffi::{CStr, CString, c_char},
     io,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Arc, Mutex, OnceLock, Weak},
     time::Duration,
 };
 
 use mobile_status::{mode_catalog, status_json};
 use osmo_core::{
-    Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Error, Event, Scanner,
-    StatusPushMode, VerificationMode,
+    Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Error, Event, GpsSample,
+    Scanner, StatusPushMode, VerificationMode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -19,6 +19,8 @@ use tokio::sync::{broadcast, mpsc};
 
 type Callback = extern "C" fn(*const c_char);
 static REQUESTS: OnceLock<Option<mpsc::Sender<Request>>> = OnceLock::new();
+/// The connected camera. Weak so a disconnect can still consume the session owner.
+static CAMERA: Mutex<Option<Weak<Camera>>> = Mutex::new(None);
 
 enum Request {
     Scan,
@@ -89,6 +91,42 @@ pub extern "C" fn osmo_ios_capture(mode: u8, capturing: bool) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn osmo_ios_set_mode(code: u8) -> bool {
     send(Request::Mode(code))
+}
+
+/// Feeds one `GpsSample` JSON object to the connected camera.
+///
+/// # Safety
+/// `sample` must be a NUL-terminated UTF-8 string valid for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn osmo_ios_gps_update(sample: *const c_char) -> bool {
+    if sample.is_null() {
+        return false;
+    }
+    let Ok(text) = (unsafe { CStr::from_ptr(sample) }).to_str() else {
+        return false;
+    };
+    let Ok(sample) = serde_json::from_str::<GpsSample>(text) else {
+        return false;
+    };
+    let Some(camera) = camera() else {
+        return false;
+    };
+    camera.update_gps(&sample).is_ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn osmo_ios_gps_stop() -> bool {
+    if let Some(camera) = camera() {
+        camera.stop_gps();
+    }
+    true
+}
+
+fn camera() -> Option<Arc<Camera>> {
+    CAMERA
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().and_then(Weak::upgrade))
 }
 
 fn emit(callback: Callback, kind: &str, payload: Value) {
@@ -165,7 +203,12 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
             Request::Connect(index) => {
                 if let Some(device) = devices.get(index as usize) {
                     match connect(&directory, device, callback).await {
-                        Ok(camera) => session(camera, callback, &mut requests).await,
+                        Ok(camera) => {
+                            session(Arc::new(camera), callback, &mut requests).await;
+                            if let Ok(mut slot) = CAMERA.lock() {
+                                *slot = None;
+                            }
+                        }
                         Err(error) => report(callback, "connectFailed", error),
                     }
                 } else {
@@ -214,7 +257,10 @@ async fn connect(
     Ok(camera)
 }
 
-async fn session(camera: Camera, callback: Callback, requests: &mut mpsc::Receiver<Request>) {
+async fn session(camera: Arc<Camera>, callback: Callback, requests: &mut mpsc::Receiver<Request>) {
+    if let Ok(mut slot) = CAMERA.lock() {
+        *slot = Some(Arc::downgrade(&camera));
+    }
     let mut events = camera.events();
     if let Err(error) = camera
         .subscribe_status(StatusPushMode::PeriodicAndChanges)
@@ -232,7 +278,20 @@ async fn session(camera: Camera, callback: Callback, requests: &mut mpsc::Receiv
                     Some(Request::Capture { mode, capturing }) => capture(&camera, mode, capturing).await,
                     Some(Request::Mode(code)) => set_mode(&camera, code).await,
                     Some(Request::Disconnect) | None => {
-                        match camera.disconnect().await {
+                        if let Ok(mut slot) = CAMERA.lock() {
+                            *slot = None;
+                        }
+                        // A concurrent GPS sample may still hold a temporary Arc.
+                        // In that case dropping the last handle still asks the
+                        // worker to shut down; there is no command to retry.
+                        let result = match Arc::try_unwrap(camera) {
+                            Ok(camera) => camera.disconnect().await,
+                            Err(camera) => {
+                                camera.stop_gps();
+                                Ok(())
+                            }
+                        };
+                        match result {
                             Ok(()) => emit(callback, "disconnected", json!({})),
                             Err(error) => report(callback, "disconnected", error),
                         }

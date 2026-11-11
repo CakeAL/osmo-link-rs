@@ -17,6 +17,8 @@
     </array>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Osmo Link 需要蓝牙来搜索、连接并遥控附近的 DJI Osmo 相机。</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Osmo Link 使用手机定位为相机视频写入时间与位置信息。iOS 不提供卫星数，该字段会以 0 发送。</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>UIBackgroundModes</key>

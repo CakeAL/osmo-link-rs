@@ -30,12 +30,25 @@ final class RemoteStore: ObservableObject {
     @Published private(set) var hasSearched = false
     @Published private(set) var pending = false
     @Published var message: String?
+    @Published var locationInjectionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(locationInjectionEnabled, forKey: "locationInjectionEnabled")
+            guard phase == .connected else { return }
+            if locationInjectionEnabled {
+                location.start()
+            } else {
+                location.stop()
+            }
+        }
+    }
     @Published var showsLiveActivity = UserDefaults.standard.object(forKey: "showsLiveActivity") as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(showsLiveActivity, forKey: "showsLiveActivity")
             updateActivity()
         }
     }
+
+    let location = LocationInjector()
 
     private let logger = Logger(subsystem: "com.cakeal.osmolink", category: "Bridge")
     private let activity: (any RecordingActivityUpdating)?
@@ -44,6 +57,8 @@ final class RemoteStore: ObservableObject {
     private var started = false
 
     private init() {
+        locationInjectionEnabled =
+            UserDefaults.standard.object(forKey: "locationInjectionEnabled") as? Bool ?? true
         if #available(iOS 16.1, *) {
             activity = RecordingActivity()
         } else {
@@ -148,6 +163,9 @@ final class RemoteStore: ObservableObject {
             self.camera = camera
             pairing = nil
             phase = .connected
+            if locationInjectionEnabled {
+                location.start()
+            }
         case let .status(status):
             if phase == .connected {
                 if self.status?.modeCode != status.modeCode { modeInfo = nil }
@@ -167,7 +185,10 @@ final class RemoteStore: ObservableObject {
                 updateActivity()
             }
         case .reconnected:
-            if phase != .disconnecting { phase = .connected }
+            if phase != .disconnecting {
+                phase = .connected
+                if locationInjectionEnabled { location.start() }
+            }
         case let .disconnected(reason):
             phase = .idle
             pairing = nil
@@ -177,6 +198,7 @@ final class RemoteStore: ObservableObject {
             modeInfo = nil
             pending = false
             recording = nil
+            location.stop()
             message = reason
             updateActivity()
         case .commandDone:

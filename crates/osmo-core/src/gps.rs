@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, Result};
 
 /// A valid GNSS fix. Coordinates use degrees, distances meters, velocities m/s.
-/// Accuracy and satellite count must come from the positioning source.
+/// Accuracy must come from the positioning source. `satellites` is transmitted
+/// verbatim; `0` means the platform cannot report a satellite count (as on iOS)
+/// rather than a fabricated fix.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpsSample {
     pub timestamp_ms: i64,
@@ -37,9 +39,6 @@ impl GpsSample {
             || !(-90.0..=90.0).contains(&self.latitude)
         {
             return Err(Error::InvalidInput("invalid GPS coordinates"));
-        }
-        if self.satellites == 0 {
-            return Err(Error::InvalidInput("GPS fix has no satellites"));
         }
         let mut b = Vec::with_capacity(48);
         let date = local.year() * 10000 + local.month() as i32 * 100 + local.day() as i32;
@@ -112,8 +111,11 @@ mod tests {
         assert_eq!(f32::from_le_bytes(b[20..24].try_into().unwrap()), 125.0);
         sample.latitude = f64::NAN;
         assert!(sample.validate().is_err());
+        // iOS cannot report a satellite count. Zero means "unavailable" and is
+        // transmitted as-is instead of blocking injection.
         sample.latitude = 0.0;
         sample.satellites = 0;
-        assert!(sample.validate().is_err());
+        let b = sample.encode().unwrap();
+        assert_eq!(u32::from_le_bytes(b[44..48].try_into().unwrap()), 0);
     }
 }

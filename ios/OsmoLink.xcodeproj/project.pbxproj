@@ -18,6 +18,8 @@
 		05A01000000000000000004A /* RecordingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A01000000000000000002B /* RecordingWidget.swift */; };
 		05A01000000000000000004B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000028 /* Assets.xcassets */; };
 		05A01000000000000000004C /* RecordingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000005 /* RecordingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		05A01000000000000000004D /* LocationInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000071 /* LocationInjector.swift */; };
+		05A01000000000000000004E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000072 /* Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +55,8 @@
 		05A01000000000000000002C /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		05A01000000000000000002D /* OsmoBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OsmoBridge.h; sourceTree = "<group>"; };
 		05A01000000000000000002E /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
+		05A010000000000000000071 /* LocationInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationInjector.swift; sourceTree = "<group>"; };
+		05A010000000000000000072 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,11 +71,13 @@
 			children = (
 				05A010000000000000000021 /* CameraModels.swift */,
 				05A010000000000000000022 /* CameraView.swift */,
+				05A010000000000000000071 /* LocationInjector.swift */,
 				05A010000000000000000023 /* OsmoLinkApp.swift */,
 				05A010000000000000000024 /* RecordingActivity.swift */,
 				05A010000000000000000025 /* RemoteStore.swift */,
 				05A010000000000000000026 /* RemoteView.swift */,
 				05A010000000000000000027 /* SettingsView.swift */,
+				05A010000000000000000072 /* Theme.swift */,
 				05A010000000000000000028 /* Assets.xcassets */,
 				05A010000000000000000029 /* Info.plist */,
 			);
@@ -155,9 +161,11 @@
 				05A010000000000000000042 /* CameraView.swift in Sources */,
 				05A010000000000000000043 /* OsmoLinkApp.swift in Sources */,
 				05A010000000000000000044 /* RecordingActivity.swift in Sources */,
+				05A01000000000000000004D /* LocationInjector.swift in Sources */,
 				05A010000000000000000045 /* RemoteStore.swift in Sources */,
 				05A010000000000000000046 /* RemoteView.swift in Sources */,
 				05A010000000000000000047 /* SettingsView.swift in Sources */,
+				05A01000000000000000004E /* Theme.swift in Sources */,
 				05A010000000000000000048 /* RecordingAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

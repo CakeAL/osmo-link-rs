@@ -18,8 +18,9 @@ import kotlin.math.sin
  * (requested 100ms). Android does not guarantee 10Hz; the UI shows the rate
  * actually received instead of assuming it.
  *
- * Samples without satellites in fix are dropped: `osmo_core` rejects them and
- * a fix without a satellite count is not a real fix.
+ * Samples that arrive before GNSS reports at least one used satellite are
+ * dropped. Android can read the real count, so it does not use the iOS
+ * convention of sending 0 for an unavailable count.
  */
 class GpsTracker(
     context: Context,

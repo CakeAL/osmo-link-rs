@@ -2,111 +2,345 @@ import SwiftUI
 
 struct CameraView: View {
     @ObservedObject var remote: RemoteStore
+    @ObservedObject var location: LocationInjector
     let camera: ConnectedCamera
 
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
-        Form {
-            Section {
-                VStack(spacing: 8) {
-                    connectionLabel
-                        .font(.subheadline.weight(.medium))
-                    if let status = remote.status {
-                        Text(status.photoMode ? status.modeTitle : duration(status.recordSeconds))
-                            .font(status.photoMode ? .largeTitle.bold() : .system(.largeTitle, design: .monospaced).bold())
-                            .multilineTextAlignment(.center)
-                            .accessibilityLabel(status.photoMode ? status.modeTitle : "录制时长 \(status.recordSeconds) 秒")
-                        Text("\(status.resolution) · \(status.fps)")
-                            .font(.subheadline)
-                        Text(remaining(status))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            } header: {
-                HStack {
-                    Text(camera.title)
-                    Spacer()
-                    if let status = remote.status {
-                        Label("\(status.battery)%", systemImage: batterySymbol(status.battery))
-                            .foregroundStyle(status.battery <= 15 ? Color.red : Color.secondary)
-                            .monospacedDigit()
-                            .accessibilityLabel("电量 \(status.battery)%")
-                    }
-                }
-                .textCase(nil)
+        ScrollView {
+            VStack(spacing: 18) {
+                statusHero
+                modeCard
+                detailsCard
+                gpsCard
             }
-
-            Section("拍摄模式") {
-                Picker("模式", selection: Binding<UInt8?>(
-                    get: { remote.status?.modeCode },
-                    set: { code in
-                        if let mode = remote.modes.first(where: { $0.code == code }) { remote.selectMode(mode) }
-                    }
-                )) {
-                    if remote.status == nil {
-                        Text("等待相机状态").tag(nil as UInt8?)
-                    } else if let status = remote.status, !remote.modes.contains(where: { $0.code == status.modeCode }) {
-                        Text(status.modeTitle).tag(Optional(status.modeCode))
-                    }
-                    ForEach(remote.modes) { mode in
-                        Text(mode.title).tag(Optional(mode.code))
-                    }
-                }
-                .pickerStyle(.menu)
-                .disabled(!remote.canChangeMode)
-            }
-
-            Section("相机详情") {
-                if camera.name != camera.title {
-                    LabeledContent("设备名称", value: camera.name)
-                }
-                if let status = remote.status {
-                    LabeledContent("可用容量", value: "\((Double(status.remainingMb) / 1024).formatted(.number.precision(.fractionLength(1)))) GB")
-                    LabeledContent("防抖", value: status.eis)
-                    if let warning = status.temperatureWarning {
-                        Label(warning, systemImage: "thermometer")
-                            .foregroundStyle(.red)
-                    }
-                }
-                if let version = remote.version {
-                    LabeledContent("固件版本", value: version)
-                }
-                if let modeInfo = remote.modeInfo, !modeInfo.isEmpty {
-                    LabeledContent("模式参数", value: modeInfo)
-                }
-            }
-
-            Section("定位") {
-                Label("相机定位注入不可用", systemImage: "location.slash")
-                    .foregroundStyle(.secondary)
-            }
+            .frame(maxWidth: AppTheme.contentWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
+        .scrollIndicators(.hidden)
+        .background(AppBackground())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             captureDock
         }
+    }
+
+    private var statusHero: some View {
+        ZStack(alignment: .topTrailing) {
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(0.96),
+                    Color.accentColor.opacity(0.66),
+                    Color.black.opacity(0.86),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .fill(.white.opacity(0.09))
+                .frame(width: 180, height: 180)
+                .offset(x: 68, y: -88)
+            Circle()
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+                .frame(width: 120, height: 120)
+                .offset(x: 88, y: 58)
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(camera.title)
+                            .font(.headline)
+                        connectionLabel
+                    }
+                    Spacer(minLength: 8)
+                    if let status = remote.status {
+                        Label("\(status.battery)%", systemImage: batterySymbol(status.battery))
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(.white.opacity(0.14), in: Capsule())
+                            .foregroundStyle(status.battery <= 15 ? Color.red : Color.white)
+                            .accessibilityLabel("电量 \(status.battery)%")
+                    }
+                }
+
+                if let status = remote.status {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(status.photoMode ? status.modeTitle : duration(status.recordSeconds))
+                            .font(
+                                status.photoMode
+                                    ? .system(size: 38, weight: .bold, design: .rounded)
+                                    : .system(size: 42, weight: .bold, design: .monospaced)
+                            )
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.55)
+                            .contentTransition(.numericText())
+                            .accessibilityLabel(status.photoMode ? status.modeTitle : "录制时长 \(status.recordSeconds) 秒")
+
+                        HStack(spacing: 7) {
+                            heroChip(status.resolution)
+                            heroChip(status.fps)
+                            heroChip(remaining(status))
+                        }
+
+                        if status.isRecording {
+                            Label("录制中", systemImage: "circle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(.red.opacity(0.85), in: Capsule())
+                        }
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("正在读取相机状态")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+            .padding(22)
+        }
+        .foregroundStyle(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: Color.accentColor.opacity(0.28), radius: 24, y: 12)
     }
 
     @ViewBuilder
     private var connectionLabel: some View {
         switch remote.phase {
         case let .reconnecting(attempt):
-            ProgressView("正在重连（\(attempt)/2）")
+            Text("正在重连 \(attempt)/2")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.76))
         case .disconnecting:
-            ProgressView("正在断开")
+            Text("正在断开")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.76))
         default:
             if let status = remote.status {
-                if status.isRecording {
-                    Label("录制中", systemImage: "circle.fill")
-                        .foregroundStyle(.red)
-                } else {
-                    Text(status.stateTitle).foregroundStyle(.secondary)
-                }
+                Text(status.stateTitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.76))
             } else {
-                ProgressView("正在读取相机状态")
+                Text("蓝牙已连接")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.76))
             }
         }
+    }
+
+    private func heroChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.white.opacity(0.86))
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(.white.opacity(0.12), in: Capsule())
+    }
+
+    private var modeCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader("拍摄模式", systemImage: "camera.filters") {
+                    if remote.status?.isRecording == true {
+                        Text("录制中不可切换")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if remote.status == nil {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("等待相机状态")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 38)
+                } else {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            if let status = remote.status,
+                               !remote.modes.contains(where: { $0.code == status.modeCode }) {
+                                modeChip(title: status.modeTitle, selected: true, enabled: false)
+                            }
+                            ForEach(remote.modes) { mode in
+                                Button {
+                                    remote.selectMode(mode)
+                                } label: {
+                                    modeChip(
+                                        title: mode.title,
+                                        selected: remote.status?.modeCode == mode.code,
+                                        enabled: remote.canChangeMode
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+            }
+        }
+    }
+
+    private func modeChip(title: String, selected: Bool, enabled: Bool) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 9)
+            .background(
+                selected ? Color.accentColor : Color.secondary.opacity(0.10),
+                in: Capsule()
+            )
+            .overlay {
+                if !selected {
+                    Capsule().strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                }
+            }
+            .opacity(enabled || selected ? 1 : 0.5)
+    }
+
+    private var detailsCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader("相机详情", systemImage: "info.circle.fill")
+
+                VStack(spacing: 11) {
+                    if camera.name != camera.title {
+                        InfoRow(label: "设备名称", value: camera.name, systemImage: "camera")
+                    }
+                    if let status = remote.status {
+                        InfoRow(
+                            label: "可用容量",
+                            value: "\((Double(status.remainingMb) / 1024).formatted(.number.precision(.fractionLength(1)))) GB",
+                            systemImage: "externaldrive"
+                        )
+                        InfoRow(label: "防抖", value: status.eis, systemImage: "hand.raised")
+                        if let warning = status.temperatureWarning {
+                            InfoRow(
+                                label: "温度",
+                                value: warning,
+                                systemImage: "thermometer",
+                                valueColor: .red
+                            )
+                        }
+                    }
+                    if let version = remote.version {
+                        InfoRow(label: "固件版本", value: version, systemImage: "cpu")
+                    }
+                    if let modeInfo = remote.modeInfo, !modeInfo.isEmpty {
+                        InfoRow(label: "模式参数", value: modeInfo, systemImage: "slider.horizontal.3")
+                    }
+                }
+
+                if remote.status == nil && remote.version == nil {
+                    Text("连接稳定后会自动读取。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var gpsCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader("定位注入", systemImage: "location.fill") {
+                    Toggle("定位注入", isOn: $remote.locationInjectionEnabled)
+                        .labelsHidden()
+                }
+
+                if remote.locationInjectionEnabled {
+                    if location.needsSettings {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(location.message ?? "定位权限已关闭", systemImage: "location.slash.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                            Button {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    openURL(url)
+                                }
+                            } label: {
+                                Label("打开系统设置", systemImage: "gear")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else if location.hasFix {
+                        HStack(spacing: 8) {
+                            gpsStat(
+                                "频率",
+                                value: location.rate > 0
+                                    ? "\(location.rate.formatted(.number.precision(.fractionLength(1)))) Hz"
+                                    : "—",
+                                systemImage: "waveform.path.ecg"
+                            )
+                            gpsStat(
+                                "精度",
+                                value: location.accuracy.map { "±\($0.formatted(.number.precision(.fractionLength(1)))) m" } ?? "—",
+                                systemImage: "scope"
+                            )
+                            gpsStat("卫星", value: "0", systemImage: "antenna.radiowaves.left.and.right")
+                        }
+                    } else {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text(location.isRunning ? "等待首个定位…" : (location.message ?? "正在请求定位权限…"))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(minHeight: 38)
+                    }
+                } else {
+                    Text("定位注入已暂停。开启后会使用手机定位为相机提供位置与时间。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider().opacity(0.5)
+
+                Label(
+                    "iOS 不提供参与定位的卫星数，当前只能将卫星数字段注入为 0，坐标、时间与精度仍会正常写入。",
+                    systemImage: "info.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func gpsStat(_ title: String, value: String, systemImage: String) -> some View {
+        VStack(spacing: 5) {
+            Label(title, systemImage: systemImage)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var captureDock: some View {
@@ -115,23 +349,23 @@ struct CameraView: View {
         let photo = status?.photoMode == true
         let title = status == nil ? "拍摄" : photo ? "拍照" : recording ? "停止录像" : "开始录像"
         let color: Color = status == nil ? .secondary : photo ? .primary : .red
-        return VStack(spacing: 4) {
+        return VStack(spacing: 5) {
             Button(action: remote.capture) {
                 ZStack {
-                    Circle().strokeBorder(color, lineWidth: 2)
-                        .frame(width: 54, height: 54)
+                    Circle().strokeBorder(color.opacity(0.9), lineWidth: 2)
+                        .frame(width: 56, height: 56)
                     if remote.pending {
                         ProgressView().tint(color)
                     } else if recording {
-                        RoundedRectangle(cornerRadius: 5)
+                        RoundedRectangle(cornerRadius: 6)
                             .fill(color)
-                            .frame(width: 22, height: 22)
+                            .frame(width: 23, height: 23)
                     } else {
                         Circle().fill(color)
-                            .frame(width: 42, height: 42)
+                            .frame(width: 44, height: 44)
                     }
                 }
-                .frame(width: 72, height: 72)
+                .frame(width: 74, height: 74)
                 .contentShape(Circle())
                 .modifier(CaptureGlass())
             }
@@ -141,18 +375,25 @@ struct CameraView: View {
             .accessibilityLabel(title)
 
             Text(title)
-                .font(.footnote.weight(.medium))
+                .font(.footnote.weight(.semibold))
                 .accessibilityHidden(true)
         }
-        .padding(.vertical, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
         .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 0.5)
+        }
     }
 
     private func remaining(_ status: CameraStatus) -> String {
         if status.photoMode {
-            return "剩余 \(status.remainingPhotos) 张照片"
+            return "剩余 \(status.remainingPhotos) 张"
         }
-        return "可录制 \(duration(status.remainingSeconds))"
+        return "可录 \(duration(status.remainingSeconds))"
     }
 
     private func duration(_ seconds: Int) -> String {

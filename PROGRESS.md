@@ -368,3 +368,24 @@ Rust startup event in Swift. Rust fmt, all 18 workspace tests, strict Clippy and
 the iOS device, iOS simulator and Android bridge cross-checks passed.
 Pairing, camera control, background delivery and Live Activity presentation
 still need hardware verification.
+
+## iOS: Core Location injection and refreshed UI
+
+Enabled phone GPS injection on iOS. `GpsSample` now transmits `satellites == 0`
+instead of rejecting it, because Core Location exposes coordinates and accuracy
+but not the satellite count used by the DJI packet. The iOS bridge exposes
+synchronous GPS update/stop C entry points backed by the connected camera, and
+the app streams Core Location fixes through it after requesting When In Use
+authorization on connect. The camera page shows the live rate and accuracy and
+states that only satellite count 0 can be injected.
+
+Refreshed the SwiftUI discovery, camera, settings and About screens with
+gradient status cards, material surfaces, a horizontal mode selector and a
+clearer capture dock. The discovery search button now renders its icon in
+white on the accent background. About includes a tappable GitHub repository
+link.
+
+Rust fmt, all 18 workspace tests, strict Clippy, the iOS device/simulator and
+Android cross-checks, and unsigned iPhone Simulator Debug and Release builds
+passed. The simulator verified the discovery, Settings and About layouts. GPS
+injection and permission behavior still need iPhone hardware verification.

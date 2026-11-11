@@ -101,7 +101,8 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
   `CaptureFormat`/`CaptureRate` 解释，未知模式/机型保留原始编码。
 - 不要发明协议值。`Osmo Nano` 在本协议文档中没有受支持的 ID，故意缺失。
 - GPS：48 字节；经纬度 ×10⁷、高度/精度毫米、速度 cm/s；日期时间用 **UTC+8** 并处理跨日；
-  拒绝 NaN、越界、以及 `satellites == 0` 的定位。发送成功只代表 BLE 写入，不代表视频已记录。
+  拒绝 NaN 与越界。`satellites == 0` 表示平台不提供卫星数（iOS），仍可编码发送；
+  不得据此拒绝定位，也不要把 0 改写为估算值。发送成功只代表 BLE 写入，不代表视频已记录。
 - GPS 节奏：默认 100ms（10Hz），允许 100ms..1s；最新样本 2 秒后停止复用；
   不插值、不伪造采样时间。
 - `wake`/`snapshot` 依赖厂商广播，btleplug 无此能力，必须返回 `Error::Unsupported`；
