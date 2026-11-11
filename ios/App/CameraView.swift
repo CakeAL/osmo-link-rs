@@ -154,67 +154,23 @@ struct CameraView: View {
 
     private var modeCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                CardHeader("拍摄模式", systemImage: "camera.filters") {
-                    if remote.status?.isRecording == true {
-                        Text("录制中不可切换")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if remote.status == nil {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("等待相机状态")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(height: 38)
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader("拍摄模式", systemImage: "camera.filters")
+                if let status = remote.status {
+                    ModeSelector(
+                        status: status,
+                        modes: remote.modes,
+                        canSwitch: remote.canChangeMode,
+                        onSelect: remote.selectMode
+                    )
+                    .id(status.modeCode)
                 } else {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            if let status = remote.status,
-                               !remote.modes.contains(where: { $0.code == status.modeCode }) {
-                                modeChip(title: status.modeTitle, selected: true, enabled: false)
-                            }
-                            ForEach(remote.modes) { mode in
-                                Button {
-                                    remote.selectMode(mode)
-                                } label: {
-                                    modeChip(
-                                        title: mode.title,
-                                        selected: remote.status?.modeCode == mode.code,
-                                        enabled: remote.canChangeMode
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
+                    Text("等待相机状态")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
-    }
-
-    private func modeChip(title: String, selected: Bool, enabled: Bool) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .lineLimit(1)
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 9)
-            .background(
-                selected ? Color.accentColor : Color.secondary.opacity(0.10),
-                in: Capsule()
-            )
-            .overlay {
-                if !selected {
-                    Capsule().strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-                }
-            }
-            .opacity(enabled || selected ? 1 : 0.5)
     }
 
     private var detailsCard: some View {
@@ -411,6 +367,158 @@ struct CameraView: View {
         case ...87: "battery.75percent"
         default: "battery.100percent"
         }
+    }
+}
+
+private struct ModeSelector: View {
+    let status: CameraStatus
+    let modes: [CameraMode]
+    let canSwitch: Bool
+    let onSelect: (CameraMode) -> Void
+
+    @State private var expanded = false
+    @State private var previewIndex: Int?
+    @GestureState private var dragging = false
+
+    private let dragThreshold: CGFloat = 8
+    private let distancePerMode: CGFloat = 32
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(previewIndex.map { modes[$0].title } ?? status.modeTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(hint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if canSwitch {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(minHeight: 48)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSwitch)
+            .highPriorityGesture(modeDrag, including: canSwitch ? .all : .none)
+
+            if expanded && canSwitch {
+                options
+            }
+        }
+        .onChange(of: dragging) { active in
+            if !active { previewIndex = nil }
+        }
+        .onChange(of: canSwitch) { enabled in
+            if !enabled {
+                expanded = false
+                previewIndex = nil
+            }
+        }
+    }
+
+    private var hint: String {
+        if status.capturing { return "拍摄中不可切换" }
+        if modes.isEmpty { return "此机型没有可切换的模式" }
+        return canSwitch ? "上下拖动或点按" : "暂不可切换"
+    }
+
+    private var modeDrag: some Gesture {
+        DragGesture(minimumDistance: dragThreshold)
+            .updating($dragging) { _, active, _ in active = true }
+            .onChanged { value in
+                guard canSwitch else { return }
+                expanded = true
+                previewIndex = index(at: steps(for: value.translation.height))
+            }
+            .onEnded { value in
+                previewIndex = nil
+                guard canSwitch else { return }
+                let offset = steps(for: value.translation.height)
+                guard offset != 0 else { return }
+                let mode = modes[index(at: offset)]
+                guard mode.code != status.modeCode else { return }
+                choose(mode)
+            }
+    }
+
+    private func steps(for distance: CGFloat) -> Int {
+        let travelled = max(0, abs(distance) - dragThreshold)
+        return Int(travelled / distancePerMode) * (distance < 0 ? 1 : -1)
+    }
+
+    private func index(at offset: Int) -> Int {
+        let start = modes.firstIndex(where: { $0.code == status.modeCode }) ?? 0
+        return min(max(start + offset, 0), modes.count - 1)
+    }
+
+    private var options: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(modes) { mode in
+                        option(mode)
+                            .id(mode.code)
+                    }
+                }
+            }
+            .frame(height: min(CGFloat(modes.count) * 50, 200))
+            .scrollDisabled(dragging)
+            .onAppear {
+                proxy.scrollTo(previewIndex.map { modes[$0].code } ?? status.modeCode, anchor: .center)
+            }
+            .onChange(of: previewIndex) { index in
+                if let index {
+                    proxy.scrollTo(modes[index].code, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private func option(_ mode: CameraMode) -> some View {
+        let selected = mode.code == status.modeCode
+        let highlighted = previewIndex.map { modes[$0].code == mode.code } ?? false
+        return Button {
+            choose(mode)
+        } label: {
+            HStack(spacing: 8) {
+                Text(mode.title)
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .accessibilityHidden(true)
+                }
+            }
+            .font(.subheadline.weight(selected || highlighted ? .semibold : .regular))
+            .foregroundStyle(highlighted || selected ? Color.accentColor : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(minHeight: 48)
+            .background(
+                Color.accentColor.opacity(highlighted ? 0.18 : (selected ? 0.10 : 0)),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func choose(_ mode: CameraMode) {
+        expanded = false
+        if mode.code != status.modeCode { onSelect(mode) }
     }
 }
 

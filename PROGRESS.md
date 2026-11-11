@@ -427,3 +427,13 @@ row opens the same list for scrolling and direct selection.
 Android unit tests cover drag thresholds and catalog bounds. Injected touch
 events on an API 37 emulator with simulated camera state verified upward and
 downward drags, release, and cancellation.
+
+## iOS: vertical mode selection
+
+The SwiftUI camera page now uses the same tap and vertical drag behavior as
+Android. Dragging previews a different choice without sending a command.
+Releasing selects the highlighted mode. The confirmed mode follows camera
+status, and the list closes if the connection or capture state disables
+selection. The arm64 iOS Simulator Debug and unsigned iPhone Release builds
+passed. Gesture behavior on iPhone and camera mode changes still need
+hardware verification.
