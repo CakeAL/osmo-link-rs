@@ -457,3 +457,14 @@ ratio is unknown, the size chip is omitted. The original byte remains intact
 in the core, and video format labels are unchanged. Rust formatting, workspace
 tests, and strict Clippy passed. The Action 4 firmware behavior still needs
 hardware verification.
+
+## Android: replace the mode list with a wheel
+
+The mode control expands in place when a vertical gesture starts. Its icons
+and labels move continuously under a fixed center highlight, with perspective
+scaling and fading at the edges. Releasing selects the nearest item once;
+cancelling restores the current mode without sending a command.
+
+Android Debug and R8 Release builds and unit tests passed. API 37 emulator
+touch injection with a simulated Action 4 verified preview before release,
+both drag directions, one command per release, and no command on cancel.
