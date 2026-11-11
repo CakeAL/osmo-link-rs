@@ -416,3 +416,14 @@ sending a switch command.
 
 Rust format, workspace tests, strict Clippy, and Android/iOS cross-checks
 passed. Mode availability across real cameras and firmware remains unverified.
+
+## Android: vertical mode selection
+
+Replaced the horizontal mode chips with a collapsible mode row and a vertical
+list. A drag on the row opens the list and previews modes in the drag
+direction. Releasing commits a different highlighted mode once. Tapping the
+row opens the same list for scrolling and direct selection.
+
+Android unit tests cover drag thresholds and catalog bounds. Injected touch
+events on an API 37 emulator with simulated camera state verified upward and
+downward drags, release, and cancellation.
