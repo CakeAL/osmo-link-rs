@@ -73,6 +73,7 @@ object OsmoRepository : BridgeListener {
                 pendingAction = null,
                 reconnectAttempt = null,
                 status = CameraStatus(),
+                modes = emptyList(),
                 version = null,
                 modeInfo = null,
                 deviceName = "",
@@ -83,7 +84,11 @@ object OsmoRepository : BridgeListener {
     }
 
     fun setMode(code: Int) {
-        if (!_state.value.connected || _state.value.pendingAction != null) return
+        val current = _state.value
+        if (!current.connected || current.pendingAction != null || current.reconnectAttempt != null ||
+            !current.status.hasData || current.status.capturing || current.status.modeCode == code ||
+            current.modes.none { it.code == code }
+        ) return
         update { it.copy(pendingAction = "mode") }
         if (!OsmoNative.nativeSetMode(code)) {
             update { it.copy(pendingAction = null) }
@@ -224,7 +229,6 @@ object OsmoRepository : BridgeListener {
             JSONObject()
         }
         when (type) {
-            "modes" -> update { it.copy(modes = parseModes(json)) }
             "devices" -> update { it.copy(scanning = false, devices = parseDevices(json)) }
             "pairing" -> update {
                 it.copy(
@@ -245,6 +249,7 @@ object OsmoRepository : BridgeListener {
                     devices = emptyList(),
                     deviceName = json.optString("name"),
                     modelName = json.optString("modelName"),
+                    modes = parseModes(json),
                     message = null,
                 )
             }
@@ -313,6 +318,7 @@ object OsmoRepository : BridgeListener {
                         pendingAction = null,
                         reconnectAttempt = null,
                         status = CameraStatus(),
+                        modes = emptyList(),
                         version = null,
                         modeInfo = null,
                         deviceName = "",

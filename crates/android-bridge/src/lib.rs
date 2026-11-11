@@ -27,13 +27,13 @@ use jni::{
     sys::{jboolean, jint},
 };
 use osmo_core::{
-    Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Event, GpsSample, Scanner,
-    StatusPushMode, VerificationMode,
+    Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Error, Event, GpsSample,
+    Scanner, StatusPushMode, VerificationMode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use mobile_status::{mode_catalog, status_json};
+use mobile_status::{mode_catalog, selectable_modes, status_json};
 
 struct BridgeState {
     devices: Vec<Device>,
@@ -221,7 +221,6 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeInit<'lo
             let _ = send_event(env, &listener, "error", &json!({ "message": message }));
             return Ok(false);
         }
-        let _ = send_event(env, &listener, "modes", &mode_catalog());
         Ok(true)
     })
 }
@@ -379,6 +378,7 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeConnect<
                             "modelName": format!("{:?}", camera.device_id),
                             "modelCode": camera.device_id.code(),
                             "name": device.name,
+                            "modes": mode_catalog(camera.device_id),
                         }),
                     );
                     spawn_event_pump(camera.clone(), epoch);
@@ -534,15 +534,25 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeSetMode<
         let Some(camera) = camera() else {
             return Ok(false);
         };
-        let mode = CameraMode::from_code(code as u8);
-        if mode.checked_code().is_err() {
+        let mode = u8::try_from(code).ok().map(CameraMode::from_code);
+        let Some(mode) =
+            mode.filter(|mode| selectable_modes(camera.device_id).any(|item| item == *mode))
+        else {
             emit(
                 "command",
                 json!({ "action": "mode", "ok": false, "error": "unsupported camera mode" }),
             );
             return Ok(false);
-        }
-        spawn_command("mode", async move { camera.set_mode(mode).await });
+        };
+        spawn_command("mode", async move {
+            let status = camera
+                .status()
+                .ok_or(Error::InvalidInput("waiting for camera status"))?;
+            if status.is_capturing() {
+                return Err(Error::InvalidInput("stop capturing before changing mode"));
+            }
+            camera.set_mode(mode).await
+        });
         Ok(true)
     })
 }

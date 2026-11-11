@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use mobile_status::{mode_catalog, status_json};
+use mobile_status::{mode_catalog, selectable_modes, status_json};
 use osmo_core::{
     Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Error, Event, GpsSample,
     Scanner, StatusPushMode, VerificationMode,
@@ -170,7 +170,6 @@ impl Controller {
 }
 
 async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receiver<Request>) {
-    emit(callback, "modes", mode_catalog());
     let mut devices = Vec::<Device>::new();
     // Reuse one CoreBluetooth adapter across scans and connections.
     let mut scanner = None;
@@ -252,7 +251,11 @@ async fn connect(
     emit(
         callback,
         "connected",
-        json!({ "name": device.name, "model": camera.device_id.to_string() }),
+        json!({
+            "name": device.name,
+            "model": camera.device_id.to_string(),
+            "modes": mode_catalog(camera.device_id),
+        }),
     );
     Ok(camera)
 }
@@ -361,11 +364,15 @@ async fn capture(camera: &Camera, mode: u8, capturing: bool) -> osmo_core::Resul
 }
 
 async fn set_mode(camera: &Camera, code: u8) -> osmo_core::Result<()> {
+    let mode = CameraMode::from_code(code);
+    if !selectable_modes(camera.device_id).any(|item| item == mode) {
+        return Err(Error::InvalidInput("unsupported camera mode"));
+    }
     let status = camera
         .status()
         .ok_or(Error::InvalidInput("waiting for camera status"))?;
     if status.is_capturing() {
         return Err(Error::InvalidInput("stop capturing before changing mode"));
     }
-    camera.set_mode(CameraMode::from_code(code)).await
+    camera.set_mode(mode).await
 }

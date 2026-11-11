@@ -2,6 +2,7 @@
 
 最小 Rust Osmo 蓝牙遥控 core、macOS 真机调试 CLI，以及 Android 和 iOS 原生 App。
 两端 App 共用 Rust 的蓝牙协议、相机控制与状态映射。
+拍摄模式按蓝牙握手识别的机型提供。Osmo Action 和 Osmo 360 分别显示适用模式；未知机型仍可查看相机上报的当前模式。
 
 ## macOS 运行
 

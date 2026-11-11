@@ -57,6 +57,7 @@ ACK 完成；其他命令仍严格匹配，返回码单独校验。
 - `wake`、完整 `snapshot` 依赖的厂商广播不受当前后端支持，明确返回 Unsupported。
 - 本文只记录 macOS 测试。Android 固定配对码、默认定位注入和通知的真机验证范围见 [Android 文档](android.md#已验证与未验证)。
 - iOS 的扫描、配对、拍摄、后台连接、灵动岛表现和手机 GPS 注入（卫星数固定 0）尚待 iPhone 真机验证。构建与系统版本要求见 [iOS 说明](../README.md#ios)。
+- Android 和 iOS 按握手设备 ID 展示的模式目录尚待各机型与固件逐项确认。
 
 ## 编译与基础检查
 

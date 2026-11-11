@@ -2,37 +2,54 @@
 //!
 //! Labels stay in English and generic; localization belongs to the app layer.
 use osmo_core::{
-    ActionPhotoSize, CameraMode, CameraStatus, CaptureFormat, CaptureRate, EisMode,
+    ActionPhotoSize, CameraMode, CameraModel, CameraStatus, CaptureFormat, CaptureRate, EisMode,
     Osmo360PhotoSize, VideoResolution,
 };
 use serde_json::{Value, json};
 
-/// Every camera mode the protocol documents, in a UI-friendly order.
-pub fn mode_catalog() -> Value {
-    const MODES: [CameraMode; 17] = [
-        CameraMode::Video,
-        CameraMode::Photo,
-        CameraMode::SlowMotion,
-        CameraMode::Timelapse,
-        CameraMode::Hyperlapse,
-        CameraMode::SuperNight,
-        CameraMode::SubjectTracking,
-        CameraMode::Selfie,
-        CameraMode::PanoramicVideo,
-        CameraMode::PanoramicPhoto,
-        CameraMode::PanoramicHyperlapse,
-        CameraMode::PanoramicSuperNight,
-        CameraMode::SingleLensSuperNight,
-        CameraMode::UltraWideVideo,
-        CameraMode::TimeFreeze,
-        CameraMode::LiveStream,
-        CameraMode::UvcLiveStream,
+/// Mobile mode choices for the model ID returned by the BLE handshake.
+pub fn selectable_modes(model: CameraModel) -> impl Iterator<Item = CameraMode> {
+    use CameraMode::*;
+
+    const ACTION: &[CameraMode] = &[
+        Video,
+        Photo,
+        SlowMotion,
+        Timelapse,
+        Hyperlapse,
+        SuperNight,
+        SubjectTracking,
+        LiveStream,
+        UvcLiveStream,
     ];
-    let modes: Vec<Value> = MODES
-        .iter()
+    const OSMO_360: &[CameraMode] = &[
+        PanoramicVideo,
+        PanoramicPhoto,
+        PanoramicHyperlapse,
+        Timelapse,
+        PanoramicSuperNight,
+        Selfie,
+        TimeFreeze,
+        Video,
+        Photo,
+        UltraWideVideo,
+        SingleLensSuperNight,
+        LiveStream,
+    ];
+    let modes = match model {
+        CameraModel::Action4 | CameraModel::Action5Pro | CameraModel::Action6 => ACTION,
+        CameraModel::Osmo360 => OSMO_360,
+        CameraModel::Unknown(_) => &[],
+    };
+    modes.iter().copied().filter(move |mode| {
+        model != CameraModel::Action4 || !matches!(mode, SuperNight | SubjectTracking)
+    })
+}
+
+pub fn mode_catalog(model: CameraModel) -> Vec<Value> {
+    selectable_modes(model)
         .map(|mode| json!({ "code": mode.code(), "name": format!("{mode:?}") }))
-        .collect();
-    json!({ "modes": modes })
+        .collect()
 }
 
 pub fn status_json(status: &CameraStatus) -> Value {
@@ -108,5 +125,31 @@ fn eis_label(eis: EisMode) -> &'static str {
         EisMode::RockSteadyPlus => "RockSteady+",
         EisMode::HorizonBalancing => "HorizonBalancing",
         EisMode::Unknown(_) => "Unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_catalog_uses_the_connected_model() {
+        let action4: Vec<_> = selectable_modes(CameraModel::Action4).collect();
+        let action5: Vec<_> = selectable_modes(CameraModel::Action5Pro).collect();
+        let action6: Vec<_> = selectable_modes(CameraModel::Action6).collect();
+        let osmo360: Vec<_> = selectable_modes(CameraModel::Osmo360).collect();
+        assert_eq!(action5, action6);
+        assert!(action4.contains(&CameraMode::SlowMotion));
+        assert!(!action4.contains(&CameraMode::SubjectTracking));
+        assert!(action5.contains(&CameraMode::SubjectTracking));
+        assert!(!action5.contains(&CameraMode::PanoramicVideo));
+        assert!(!osmo360.contains(&CameraMode::SubjectTracking));
+        assert!(osmo360.contains(&CameraMode::PanoramicVideo));
+        assert!(osmo360.contains(&CameraMode::Photo));
+        assert_eq!(
+            mode_catalog(CameraModel::Osmo360)[0],
+            json!({ "code": CameraMode::PanoramicVideo.code(), "name": "PanoramicVideo" })
+        );
+        assert!(mode_catalog(CameraModel::Unknown(0)).is_empty());
     }
 }

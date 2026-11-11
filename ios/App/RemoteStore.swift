@@ -21,7 +21,6 @@ final class RemoteStore: ObservableObject {
 
     @Published private(set) var phase = Phase.idle
     @Published private(set) var devices: [CameraDevice] = []
-    @Published private(set) var modes: [CameraMode] = []
     @Published private(set) var pairing: Pairing?
     @Published private(set) var camera: ConnectedCamera?
     @Published private(set) var status: CameraStatus?
@@ -66,15 +65,17 @@ final class RemoteStore: ObservableObject {
         }
     }
 
+    var modes: [CameraMode] { camera?.modes ?? [] }
+
     var canCapture: Bool {
-        guard phase == .connected, !pending, let status, modes.contains(where: { $0.code == status.modeCode }) else {
+        guard phase == .connected, !pending, let status, !status.modeName.hasPrefix("Unknown(") else {
             return false
         }
         return !status.photoMode || !status.capturing
     }
 
     var canChangeMode: Bool {
-        phase == .connected && !pending && status?.capturing == false
+        phase == .connected && !pending && status?.capturing == false && !modes.isEmpty
     }
 
     func activate(_ active: Bool) {
@@ -119,7 +120,7 @@ final class RemoteStore: ObservableObject {
     }
 
     func selectMode(_ mode: CameraMode) {
-        guard canChangeMode, mode.code != status?.modeCode else { return }
+        guard canChangeMode, mode.code != status?.modeCode, modes.contains(where: { $0.code == mode.code }) else { return }
         queueCommand(osmo_ios_set_mode(mode.code))
     }
 
@@ -152,8 +153,6 @@ final class RemoteStore: ObservableObject {
             return
         }
         switch event {
-        case let .modes(modes):
-            self.modes = modes
         case let .devices(devices):
             self.devices = devices
             phase = .idle

@@ -404,3 +404,15 @@ appearance settings.
 Debug and R8 release builds and Android unit tests passed. The updated app
 launched on the API 37 emulator. Camera and GPS behavior still need hardware
 verification.
+
+## Mobile: mode choices by connected camera
+
+The Android and iOS bridges attach a shared mode catalog to the connection
+event using the camera ID returned by the BLE handshake. Action and Osmo 360
+get separate choices, with SuperNight and Subject Tracking omitted for
+Action 4. An unrecognized ID still reports the current mode and offers no
+switch targets. The bridges check the selected mode and capture state before
+sending a switch command.
+
+Rust format, workspace tests, strict Clippy, and Android/iOS cross-checks
+passed. Mode availability across real cameras and firmware remains unverified.

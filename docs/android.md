@@ -27,9 +27,9 @@
 `BridgeListener.onEvent(type, json)` 回到 Kotlin → `OsmoRepository` 合并成
 `StateFlow<UiState>` → Compose 与通知渲染。所有命令立即返回，结果以事件形式回来。
 
-事件类型：`modes`、`devices`、`pairing`、`connected`、`connectFailed`、`status`、
+事件类型：`devices`、`pairing`、`connected`、`connectFailed`、`status`、
 `modeInfo`、`version`、`command`、`warning`、`error`、`gpsError`、`reconnecting`、
-`reconnected`、`disconnected`。
+`reconnected`、`disconnected`。`connected` 同时携带按相机协议 ID 生成的模式目录。
 
 ## 构建
 
