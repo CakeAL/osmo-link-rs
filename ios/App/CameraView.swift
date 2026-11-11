@@ -377,147 +377,157 @@ private struct ModeSelector: View {
     let onSelect: (CameraMode) -> Void
 
     @State private var expanded = false
-    @State private var previewIndex: Int?
+    @State private var position: CGFloat?
+    @State private var lastTranslation: CGFloat?
     @GestureState private var dragging = false
+    @ScaledMetric(relativeTo: .headline) private var rowHeight: CGFloat = 48
 
-    private let dragThreshold: CGFloat = 8
-    private let distancePerMode: CGFloat = 32
+    private var startIndex: Int {
+        modes.firstIndex(where: { $0.code == status.modeCode }) ?? 0
+    }
+
+    private var wheelPosition: CGFloat { position ?? CGFloat(startIndex) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                expanded.toggle()
-            } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(previewIndex.map { modes[$0].title } ?? status.modeTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(hint)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    if canSwitch {
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(minHeight: 48)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canSwitch)
-            .highPriorityGesture(modeDrag, including: canSwitch ? .all : .none)
-
+        ZStack {
             if expanded && canSwitch {
-                options
+                wheel
+            } else {
+                trigger
             }
         }
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .contentShape(Rectangle())
+        .highPriorityGesture(modeDrag, including: canSwitch ? .all : .none)
         .onChange(of: dragging) { active in
-            if !active { previewIndex = nil }
+            if !active {
+                lastTranslation = nil
+                position = nil
+            }
         }
         .onChange(of: canSwitch) { enabled in
             if !enabled {
                 expanded = false
-                previewIndex = nil
+                lastTranslation = nil
+                position = nil
             }
         }
+    }
+
+    private var trigger: some View {
+        Button {
+            expanded = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: CameraMode.symbol(for: status.modeName))
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(status.modeTitle)
+                        .font(.subheadline.weight(.semibold))
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if canSwitch {
+                    Image(systemName: "chevron.down")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSwitch)
     }
 
     private var hint: String {
         if status.capturing { return "拍摄中不可切换" }
         if modes.isEmpty { return "此机型没有可切换的模式" }
-        return canSwitch ? "上下拖动或点按" : "暂不可切换"
+        return canSwitch ? "上下滑动或点按" : "暂不可切换"
     }
 
     private var modeDrag: some Gesture {
-        DragGesture(minimumDistance: dragThreshold)
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .updating($dragging) { _, active, _ in active = true }
             .onChanged { value in
                 guard canSwitch else { return }
+                let height = value.translation.height
+                guard lastTranslation != nil || abs(height) > abs(value.translation.width) else { return }
                 expanded = true
-                previewIndex = index(at: steps(for: value.translation.height))
+                move(to: height)
             }
             .onEnded { value in
-                previewIndex = nil
-                guard canSwitch else { return }
-                let offset = steps(for: value.translation.height)
-                guard offset != 0 else { return }
-                let mode = modes[index(at: offset)]
-                guard mode.code != status.modeCode else { return }
-                choose(mode)
+                guard canSwitch, lastTranslation != nil else { return }
+                move(to: value.translation.height)
+                let index = Int(wheelPosition.rounded())
+                if index != startIndex { choose(index) }
             }
     }
 
-    private func steps(for distance: CGFloat) -> Int {
-        let travelled = max(0, abs(distance) - dragThreshold)
-        return Int(travelled / distancePerMode) * (distance < 0 ? 1 : -1)
+    private func move(to translation: CGFloat) {
+        let delta = translation - (lastTranslation ?? translation)
+        lastTranslation = translation
+        position = min(max(wheelPosition - delta / rowHeight, 0), CGFloat(modes.count - 1))
     }
 
-    private func index(at offset: Int) -> Int {
-        let start = modes.firstIndex(where: { $0.code == status.modeCode }) ?? 0
-        return min(max(start + offset, 0), modes.count - 1)
-    }
-
-    private var options: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(modes) { mode in
-                        option(mode)
-                            .id(mode.code)
-                    }
-                }
-            }
-            .frame(height: min(CGFloat(modes.count) * 50, 200))
-            .scrollDisabled(dragging)
-            .onAppear {
-                proxy.scrollTo(previewIndex.map { modes[$0].code } ?? status.modeCode, anchor: .center)
-            }
-            .onChange(of: previewIndex) { index in
-                if let index {
-                    proxy.scrollTo(modes[index].code, anchor: .center)
+    private var wheel: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.accentColor.opacity(0.16))
+                .frame(height: rowHeight)
+                .padding(.horizontal, 8)
+                .accessibilityHidden(true)
+            ForEach(modes.indices, id: \.self) { index in
+                let distance = CGFloat(index) - wheelPosition
+                if abs(distance) < 3 {
+                    option(index, distance: distance)
                 }
             }
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: rowHeight * 4.4)
     }
 
-    private func option(_ mode: CameraMode) -> some View {
-        let selected = mode.code == status.modeCode
-        let highlighted = previewIndex.map { modes[$0].code == mode.code } ?? false
+    private func option(_ index: Int, distance: CGFloat) -> some View {
+        let mode = modes[index]
+        let centered = index == Int(wheelPosition.rounded())
+        let angle = distance * 0.4
+        let scale = cos(angle)
         return Button {
-            choose(mode)
+            choose(index)
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: CameraMode.symbol(for: mode.name))
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
                 Text(mode.title)
-                Spacer(minLength: 8)
-                if selected {
-                    Image(systemName: "checkmark")
-                        .accessibilityHidden(true)
-                }
+                    .lineLimit(1)
             }
-            .font(.subheadline.weight(selected || highlighted ? .semibold : .regular))
-            .foregroundStyle(highlighted || selected ? Color.accentColor : .primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .frame(minHeight: 48)
-            .background(
-                Color.accentColor.opacity(highlighted ? 0.18 : (selected ? 0.10 : 0)),
-                in: RoundedRectangle(cornerRadius: 12)
-            )
+            .font(.headline.weight(centered ? .bold : .medium))
+            .foregroundStyle(centered ? Color.accentColor : .primary)
+            .frame(maxWidth: .infinity)
+            .frame(height: rowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .scaleEffect(x: 0.86 + 0.14 * scale, y: scale)
+        .opacity(1 - Double(abs(distance)) / 3)
+        .offset(y: rowHeight * sin(angle) / sin(0.4))
+        .accessibilityAddTraits(centered ? .isSelected : [])
+        .accessibilitySortPriority(Double(modes.count - index))
     }
 
-    private func choose(_ mode: CameraMode) {
+    private func choose(_ index: Int) {
         expanded = false
+        position = nil
+        let mode = modes[index]
         if mode.code != status.modeCode { onSelect(mode) }
     }
 }

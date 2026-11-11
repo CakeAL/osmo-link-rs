@@ -35,6 +35,19 @@ struct CameraMode: Decodable, Identifiable {
         default: "未知模式"
         }
     }
+
+    static func symbol(for name: String) -> String {
+        switch name {
+        case "Photo", "PanoramicPhoto": "camera.fill"
+        case "SlowMotion", "Timelapse": "clock"
+        case "Hyperlapse", "PanoramicHyperlapse", "TimeFreeze": "timer"
+        case "SuperNight", "PanoramicSuperNight", "SingleLensSuperNight": "moon.stars.fill"
+        case "SubjectTracking", "Selfie": "viewfinder"
+        case "PanoramicVideo": "globe"
+        case "LiveStream", "UvcLiveStream": "dot.radiowaves.left.and.right"
+        default: "video.fill"
+        }
+    }
 }
 
 struct CameraStatus: Decodable {

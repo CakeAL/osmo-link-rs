@@ -468,3 +468,10 @@ cancelling restores the current mode without sending a command.
 Android Debug and R8 Release builds and unit tests passed. API 37 emulator
 touch injection with a simulated Action 4 verified preview before release,
 both drag directions, one command per release, and no command on cancel.
+
+## iOS: synchronize the icon mode wheel
+
+The SwiftUI mode control uses the same in-place wheel, continuous drag,
+center highlight, and mode icons. Arm64 iOS Simulator Debug and unsigned
+iPhone Release builds passed. Touch interaction on iPhone and mode changes
+on a physical camera remain unverified.
