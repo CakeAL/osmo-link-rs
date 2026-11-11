@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use time::Duration;
+
 use crate::error::{Error, Result};
 
 const MAX_MOOV_SIZE: u64 = 512 * 1024 * 1024;
@@ -28,22 +30,38 @@ struct StscEntry {
     samples_per_chunk: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SttsEntry {
+    sample_count: u32,
+    sample_delta: u32,
+}
+
 #[derive(Debug, Default)]
 struct Track {
     sample_entry: Option<[u8; 4]>,
+    timescale: u32,
     sample_sizes: Vec<u32>,
     chunk_offsets: Vec<u64>,
     stsc: Vec<StscEntry>,
+    stts: Vec<SttsEntry>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct SampleRef {
     offset: u64,
     size: u32,
+    time: Duration,
+}
+
+/// One `djmd` sample with its position on the track timeline.
+pub(crate) struct MetadataSample {
+    /// Decode time from the start of the track, from `stts`.
+    pub(crate) time: Duration,
+    pub(crate) data: Vec<u8>,
 }
 
 /// Read every sample of the first `djmd` track from an MP4 file.
-pub(crate) fn read_djmd_samples(path: &Path) -> Result<Vec<Vec<u8>>> {
+pub(crate) fn read_djmd_samples(path: &Path) -> Result<Vec<MetadataSample>> {
     let mut file = File::open(path)?;
     let file_len = file.seek(SeekFrom::End(0))?;
     file.seek(SeekFrom::Start(0))?;
@@ -205,13 +223,39 @@ fn parse_trak(data: &[u8]) -> Result<Track> {
             continue;
         }
         for media in child_boxes(child.data)? {
-            if &media.kind == b"minf" {
-                parse_minf(media.data, &mut track)?;
+            match &media.kind {
+                b"mdhd" => track.timescale = parse_mdhd(media.data)?,
+                b"minf" => parse_minf(media.data, &mut track)?,
+                _ => {}
             }
         }
     }
 
     Ok(track)
+}
+
+fn parse_mdhd(data: &[u8]) -> Result<u32> {
+    // Full box: version/flags, creation and modification times, timescale.
+    // Version 1 widens the two timestamps to 64 bits.
+    let (offset, minimum_len) = match data.first() {
+        Some(0) => (12usize, 20usize),
+        Some(1) => (20usize, 32usize),
+        Some(version) => {
+            return Err(Error::InvalidMp4(format!(
+                "unsupported `mdhd` version {version}"
+            )));
+        }
+        None => return Err(Error::InvalidMp4("`mdhd` box is empty".to_owned())),
+    };
+    if data.len() < minimum_len {
+        return Err(Error::InvalidMp4("`mdhd` box is too short".to_owned()));
+    }
+
+    let timescale = be_u32(&data[offset..offset + 4]);
+    if timescale == 0 {
+        return Err(Error::InvalidMp4("`mdhd` timescale is zero".to_owned()));
+    }
+    Ok(timescale)
 }
 
 fn parse_minf(data: &[u8], track: &mut Track) -> Result<()> {
@@ -231,6 +275,7 @@ fn parse_stbl(data: &[u8], track: &mut Track) -> Result<()> {
             b"stco" => track.chunk_offsets = parse_stco(child.data)?,
             b"co64" => track.chunk_offsets = parse_co64(child.data)?,
             b"stsc" => track.stsc = parse_stsc(child.data)?,
+            b"stts" => track.stts = parse_stts(child.data)?,
             _ => {}
         }
     }
@@ -403,6 +448,94 @@ fn parse_stsc(data: &[u8]) -> Result<Vec<StscEntry>> {
     Ok(entries)
 }
 
+fn parse_stts(data: &[u8]) -> Result<Vec<SttsEntry>> {
+    if data.len() < 8 {
+        return Err(Error::InvalidMp4("`stts` box is too short".to_owned()));
+    }
+    let count = be_u32(&data[4..8]) as usize;
+    if count > MAX_SAMPLES {
+        return Err(Error::InvalidMp4(format!(
+            "`stts` entry count {count} is too large"
+        )));
+    }
+    let needed = 8usize
+        .checked_add(
+            count
+                .checked_mul(8)
+                .ok_or_else(|| Error::InvalidMp4("`stts` table overflow".to_owned()))?,
+        )
+        .ok_or_else(|| Error::InvalidMp4("`stts` table overflow".to_owned()))?;
+    if data.len() < needed {
+        return Err(Error::InvalidMp4(
+            "truncated `stts` time-to-sample table".to_owned(),
+        ));
+    }
+
+    let mut entries = Vec::with_capacity(count);
+    for index in 0..count {
+        let offset = 8 + index * 8;
+        let sample_count = be_u32(&data[offset..offset + 4]);
+        let sample_delta = be_u32(&data[offset + 4..offset + 8]);
+        if sample_count == 0 {
+            return Err(Error::InvalidMp4(
+                "`stts` has a zero sample count".to_owned(),
+            ));
+        }
+        entries.push(SttsEntry {
+            sample_count,
+            sample_delta,
+        });
+    }
+
+    Ok(entries)
+}
+
+/// Decode time of every sample, taken from the track `stts` table.
+fn sample_times(track: &Track, sample_count: usize) -> Result<Vec<Duration>> {
+    if track.timescale == 0 {
+        return Err(Error::InvalidMp4(
+            "metadata track has no `mdhd` timescale".to_owned(),
+        ));
+    }
+    if track.stts.is_empty() {
+        return Err(Error::InvalidMp4(
+            "metadata track has no `stts` table".to_owned(),
+        ));
+    }
+
+    let mut times = Vec::with_capacity(sample_count);
+    let mut ticks = 0u64;
+    for entry in &track.stts {
+        for _ in 0..entry.sample_count {
+            if times.len() == sample_count {
+                return Err(Error::InvalidMp4(
+                    "`stts` covers more samples than `stsz`".to_owned(),
+                ));
+            }
+            times.push(ticks_to_duration(ticks, track.timescale)?);
+            ticks = ticks
+                .checked_add(u64::from(entry.sample_delta))
+                .ok_or_else(|| Error::InvalidMp4("`stts` decode time overflow".to_owned()))?;
+        }
+    }
+
+    if times.len() != sample_count {
+        return Err(Error::InvalidMp4(format!(
+            "`stsz` has {sample_count} samples but `stts` covers {}",
+            times.len()
+        )));
+    }
+
+    Ok(times)
+}
+
+fn ticks_to_duration(ticks: u64, timescale: u32) -> Result<Duration> {
+    let nanos = u128::from(ticks) * 1_000_000_000 / u128::from(timescale);
+    let nanos = i64::try_from(nanos)
+        .map_err(|_| Error::InvalidMp4("`stts` decode time is too large".to_owned()))?;
+    Ok(Duration::nanoseconds(nanos))
+}
+
 fn sample_refs(track: &Track) -> Result<Vec<SampleRef>> {
     if track.sample_sizes.is_empty() {
         return Err(Error::InvalidMp4(
@@ -423,6 +556,7 @@ fn sample_refs(track: &Track) -> Result<Vec<SampleRef>> {
     let mut refs = Vec::with_capacity(track.sample_sizes.len());
     let mut sample_index = 0usize;
     let mut stsc_index = 0usize;
+    let times = sample_times(track, track.sample_sizes.len())?;
 
     for (chunk_index, &chunk_offset) in track.chunk_offsets.iter().enumerate() {
         let chunk_number = u32::try_from(chunk_index + 1)
@@ -455,7 +589,11 @@ fn sample_refs(track: &Track) -> Result<Vec<SampleRef>> {
                     "sample {sample_index} is too large ({size} bytes)"
                 )));
             }
-            refs.push(SampleRef { offset, size });
+            refs.push(SampleRef {
+                offset,
+                size,
+                time: times[sample_index],
+            });
             offset = offset
                 .checked_add(u64::from(size))
                 .ok_or_else(|| Error::InvalidMp4("sample offset overflow".to_owned()))?;
@@ -473,7 +611,7 @@ fn sample_refs(track: &Track) -> Result<Vec<SampleRef>> {
     Ok(refs)
 }
 
-fn read_samples(path: &Path, file_len: u64, refs: &[SampleRef]) -> Result<Vec<Vec<u8>>> {
+fn read_samples(path: &Path, file_len: u64, refs: &[SampleRef]) -> Result<Vec<MetadataSample>> {
     let mut file = File::open(path)?;
     let mut samples = Vec::with_capacity(refs.len());
 
@@ -492,7 +630,10 @@ fn read_samples(path: &Path, file_len: u64, refs: &[SampleRef]) -> Result<Vec<Ve
         file.seek(SeekFrom::Start(sample.offset))?;
         let mut data = vec![0u8; sample.size as usize];
         file.read_exact(&mut data)?;
-        samples.push(data);
+        samples.push(MetadataSample {
+            time: sample.time,
+            data,
+        });
     }
 
     Ok(samples)
@@ -580,10 +721,29 @@ mod tests {
         ])
     }
 
-    fn moov_with_track(stbl: &[u8]) -> Vec<u8> {
-        let stbl = boxed(b"stbl", stbl);
+    fn stts_box(entries: &[(u32, u32)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(entries.len() as u32).to_be_bytes());
+        for (sample_count, sample_delta) in entries {
+            body.extend_from_slice(&sample_count.to_be_bytes());
+            body.extend_from_slice(&sample_delta.to_be_bytes());
+        }
+        full_box(b"stts", &body)
+    }
+
+    fn mdhd_box(timescale: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&timescale.to_be_bytes());
+        body.extend_from_slice(&0u32.to_be_bytes());
+        full_box(b"mdhd", &body)
+    }
+
+    fn moov_with_track(stbl: &[u8], stts: &[(u32, u32)], timescale: u32) -> Vec<u8> {
+        let stbl = boxed(b"stbl", &concat(&[stbl.to_vec(), stts_box(stts)]));
         let minf = boxed(b"minf", &stbl);
-        let mdia = boxed(b"mdia", &minf);
+        let mdia = boxed(b"mdia", &concat(&[mdhd_box(timescale), minf]));
         let trak = boxed(b"trak", &mdia);
         boxed(b"moov", &trak)
     }
@@ -591,7 +751,7 @@ mod tests {
     #[test]
     fn maps_samples_across_chunks() {
         let stbl = sample_table(&[3, 4, 5], &[100, 200], &[(1, 2), (2, 1)]);
-        let moov = moov_with_track(&stbl);
+        let moov = moov_with_track(&stbl, &[(3, 1001)], 30_000);
         let track = find_djmd_track(&moov[8..]).expect("djmd track");
         let refs = sample_refs(&track).expect("sample refs");
 
@@ -600,9 +760,48 @@ mod tests {
     }
 
     #[test]
+    fn takes_sample_times_from_stts() {
+        let stbl = sample_table(&[3, 4, 5, 6], &[100, 200], &[(1, 2), (2, 2)]);
+        // Two samples one second apart, then two more half a second apart.
+        let moov = moov_with_track(&stbl, &[(2, 1000), (2, 500)], 1000);
+        let track = find_djmd_track(&moov[8..]).expect("djmd track");
+        let refs = sample_refs(&track).expect("sample refs");
+
+        let times: Vec<Duration> = refs.iter().map(|sample| sample.time).collect();
+        assert_eq!(
+            times,
+            vec![
+                Duration::ZERO,
+                Duration::seconds(1),
+                Duration::seconds(2),
+                Duration::milliseconds(2500)
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_stts_that_does_not_cover_every_sample() {
+        let stbl = sample_table(&[3, 4, 5], &[100, 200], &[(1, 2), (2, 1)]);
+        let moov = moov_with_track(&stbl, &[(2, 1000)], 1000);
+        let track = find_djmd_track(&moov[8..]).expect("djmd track");
+
+        let error = sample_refs(&track).expect_err("sample count mismatch");
+        assert!(error.to_string().contains("`stts` covers 2"));
+    }
+
+    #[test]
+    fn rejects_zero_timescale() {
+        let stbl = sample_table(&[3], &[100], &[(1, 1)]);
+        let moov = moov_with_track(&stbl, &[(1, 1000)], 0);
+
+        let error = find_djmd_track(&moov[8..]).expect_err("zero timescale");
+        assert!(error.to_string().contains("timescale"));
+    }
+
+    #[test]
     fn rejects_missing_djmd_track() {
         let stbl = sample_table(&[1], &[100], &[(1, 1)]);
-        let moov = moov_with_track(&stbl);
+        let moov = moov_with_track(&stbl, &[(1, 1000)], 1000);
         let mut broken = moov.clone();
         let position = broken
             .windows(4)

@@ -518,3 +518,34 @@ Rust formatting, 28 workspace tests, and strict Clippy passed. Android Debug
 and R8 Release builds and unit tests passed; the unsigned arm64 iPhone Release
 build passed. Battery alerts, the iOS mode gesture, and the hardware return-code
 messages still need real-camera verification.
+
+## Video GPS: sample-timeline timestamps and signed altitude
+
+The extraction tool used each `djmd` sample's embedded GPS `datetime` string as
+the point timestamp. DJI writes that clock truncated to whole seconds, and the
+camera occasionally stores a corrupt value: `DJI_20261105120251_0002_D.MP4` has
+one sample reporting `12:06:12` in the middle of the `02:06` minute, ten hours
+ahead of its neighbours. `resample` then rejected the whole file with
+`GPS timestamps are not monotonically increasing`, so no GPX could be written.
+
+Sample times now come from the MP4 track timeline: `stts` decode times scaled by
+the `mdhd` timescale (30000 ticks at 29.97 fps). The embedded GPS datetimes only
+anchor that timeline to wall-clock time, through the median of their per-sample
+offsets, so a corrupt timestamp can neither move nor reorder the track. A fix
+whose embedded timestamp is missing or unparseable is kept, and only a file with
+no usable timestamp at all fails, with `Error::MissingTimestamps`. GPX output now
+keeps the real 33 ms frame spacing instead of 30 duplicate timestamps per
+second, which also removes the up-to-one-second lag the 2 Hz interpolation had
+between the last frame of one second and the first of the next.
+
+The same file exposed elevations of 4,294,961.534 m. `gps_altitude_mm` is
+signed: its first 30 fixes reported -5762 mm as a ten-byte two's complement
+varint, which the schema read as `uint32`. It is now `int32`, matching the wire
+format, and those points carry -5.762 m.
+
+Unit tests cover `stts` mapping (multiple entries, count mismatch, zero
+timescale), the median anchor (including a corrupt sample), a synthetic MP4 with
+one corrupt timestamp end to end, and a signed altitude varint. Re-verified with
+`DJI_20261105120251_0002_D.MP4` (Action 6, 17 GB): 66,270 raw points, 5,130
+samples without a fix, first point `2026-11-05T02:06:01.742Z`, last
+`2026-11-05T02:42:52.742Z`, default 2 Hz linear output has 4,423 points.

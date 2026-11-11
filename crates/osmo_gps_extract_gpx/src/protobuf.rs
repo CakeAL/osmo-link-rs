@@ -78,8 +78,10 @@ pub(crate) struct RemoteGpsInfo {
 pub(crate) struct Coordinates {
     #[prost(message, optional, tag = "1")]
     pub(crate) info: Option<CoordinatesInfo>,
-    #[prost(uint32, tag = "2")]
-    pub(crate) gps_altitude_mm: u32,
+    /// Signed: DJI writes heights below the ellipsoid as ten-byte two's
+    /// complement varints (a real file starts at -5762 mm).
+    #[prost(int32, tag = "2")]
+    pub(crate) gps_altitude_mm: i32,
     #[prost(message, optional, tag = "6")]
     pub(crate) datetime: Option<CoordinatesDatetime>,
 }
@@ -179,5 +181,17 @@ mod tests {
     fn rejects_truncated_message() {
         let error = parse_generic_message(&[0x0a, 0x05, 0x01]).expect_err("truncated");
         assert!(error.to_string().contains("buffer"));
+    }
+
+    #[test]
+    fn decodes_a_signed_altitude() {
+        // Field 2 (`gps_altitude_mm`) of a `Coordinates` message: -5762 mm,
+        // sign-extended into the ten-byte varint a DJI file actually contains.
+        let bytes = [
+            0x10, 0xfe, 0xd2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ];
+
+        let coordinates = Coordinates::decode(&bytes[..]).expect("coordinates");
+        assert_eq!(coordinates.gps_altitude_mm, -5_762);
     }
 }

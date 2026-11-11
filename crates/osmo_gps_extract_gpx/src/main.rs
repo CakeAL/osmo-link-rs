@@ -218,8 +218,10 @@ osmo_gps_extract_gpx - 从 DJI Osmo Action 4/5/6 的 MP4 提取 GPS 并写 GPX
 
 说明:
   读取第 1 条 sample entry 为 `djmd` 的轨道，按 DJI protobuf 解析
-  GenericMessage.gps_info，再按 stsc/stsz/stco|co64 读取样本。
-  默认把嵌入时间当作 UTC 原样输出；`--timezone-offset 8` 会再减 8 小时。
+  GenericMessage.gps_info，按 stsc/stsz/stco|co64 定位样本，样本时间取
+  stts 时间轴。嵌入的 GPS 日期时间只用来确定轨迹的绝对时刻，因此个别
+  写坏的时间戳不会中断导出。嵌入时间按 UTC 原样解释；
+  `--timezone-offset 8` 会再减 8 小时。
 "
     );
 }

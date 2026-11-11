@@ -18,6 +18,9 @@ pub enum Error {
     #[error("no GPS points found in the metadata track")]
     NoGpsPoints,
 
+    #[error("no embedded GPS timestamps to anchor the MP4 sample timeline")]
+    MissingTimestamps,
+
     #[error("invalid timestamp {0:?}")]
     InvalidTimestamp(String),
 

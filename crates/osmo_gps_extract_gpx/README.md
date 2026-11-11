@@ -8,6 +8,8 @@ protobuf `GenericMessage`。本 crate：
 - 解析 MP4 的 `moov → trak → mdia → minf → stbl`，按 `stsd` 的 sample entry
   `djmd`（而不是轨道序号）选出元数据轨；
 - 用 `stsc` + `stsz` + `stco`/`co64` 还原每个 sample 的偏移，读取全部样本；
+- 用 `stts` 取每个样本在轨道时间轴上的位置，再用嵌入的 GPS 日期时间确定绝对
+  时刻（对全部样本的偏移取中位数，个别写坏的时间戳不会移动整条轨迹）；
 - 用 `prost` 按 DJI proto 解码 `GenericMessage.gps_info`；
 - 用 `gpx` crate 写 GPX 1.1；
 - 默认按 2 Hz 线性插值输出，也支持保留原始点或等间隔丢弃。
@@ -85,8 +87,13 @@ MP4 容器层保留了一个很小的 box 解析器。原因是 `mp4` crate 0.14
 
 - 目前验证的是 Action 6 的 `dvtm_ac206.proto`。Action 4/5 的字段路径与它一致，
   但没有在本仓库中做真机文件验证。
-- `--timezone-offset` 只是从解析出的 naive 时间中减去指定小时数，不做时区推断；
-  DJI 文件里写的是 `YYYY-MM-DD HH:MM:SS`，默认按 UTC 原样输出。
+- 嵌入的 GPS 时间是整秒精度（`2026-11-05 02:06:01`），绝对时刻只能精确到 1 秒；
+  轨迹内部的间隔来自 MP4 时间轴，是准确的。`--timezone-offset` 只是从这个绝对
+  时刻中减去指定小时数，不做时区推断。
+- DJI 偶尔会写出错误的嵌入时间戳（实测有一次 `12:06:12` 夹在 `02:06` 的一分钟
+  里）。导出只会忽略它对绝对时刻的影响，该样本的位置仍然保留。
+- `gps_altitude_mm` 是**有符号**值：低于椭球面时 DJI 用 10 字节 varint 写负数，
+  按无符号读取会得到四百多万米的错误高程。
 - `djmd` 轨的样本通常是 one-sample-per-chunk；实现按 `stsc` 处理多 sample/chunk，
   但这种情况没有真实文件覆盖。
 - `gpx` 0.10 没有暴露 `<extensions>` 字段，因此没有输出加速度计/derivatives；
