@@ -3,11 +3,13 @@ package com.cakeal.osmolink.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,7 +34,7 @@ internal fun PairingDialog(pairing: PairingInfo, onCancel: () -> Unit) {
                 contentColor = colors.onPrimaryContainer,
             ) {
                 Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                    UiIcon(R.drawable.ic_ui_bluetooth)
+                    UiIcon(R.drawable.ic_ui_camera)
                 }
             }
         },
@@ -43,7 +45,7 @@ internal fun PairingDialog(pairing: PairingInfo, onCancel: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("请在相机屏幕上确认配对码", textAlign = TextAlign.Center)
+                Text("请在 ${pairing.device} 上确认配对码", textAlign = TextAlign.Center)
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
@@ -57,7 +59,13 @@ internal fun PairingDialog(pairing: PairingInfo, onCancel: () -> Unit) {
                         textAlign = TextAlign.Center,
                     )
                 }
-                Text(pairing.device, textAlign = TextAlign.Center)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text("正在等待相机", style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {},

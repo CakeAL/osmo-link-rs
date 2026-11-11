@@ -39,7 +39,7 @@ internal fun ControlBar(
 ) {
     val photoMode = state.status.modeName in PHOTO_MODES
     val pending = state.pendingAction != null
-    val enabled = state.connected && !pending
+    val enabled = state.canControlCamera && !(photoMode && state.status.capturing)
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -53,6 +53,7 @@ internal fun ControlBar(
                 modifier = Modifier.widthIn(min = 112.dp).padding(vertical = 8.dp),
                 photoMode = photoMode,
                 recording = state.status.isRecording,
+                hasStatus = state.status.hasData,
                 pending = pending,
                 enabled = enabled,
                 onClick = if (photoMode) onShutter else onRecord,
@@ -66,6 +67,7 @@ private fun CaptureAction(
     modifier: Modifier,
     photoMode: Boolean,
     recording: Boolean,
+    hasStatus: Boolean,
     pending: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -109,6 +111,7 @@ private fun CaptureAction(
             }
             Text(
                 text = when {
+                    !hasStatus -> "拍摄"
                     photoMode -> "拍照"
                     recording -> "停止录像"
                     else -> "开始录像"

@@ -48,7 +48,7 @@ object OsmoRepository : BridgeListener {
     fun scan() {
         val current = _state.value
         if (current.scanning || current.connected || current.connecting) return
-        update { it.copy(scanning = true, devices = emptyList(), message = null) }
+        update { it.copy(scanning = true, hasSearched = true, devices = emptyList(), message = null) }
         if (!OsmoNative.nativeScan(12)) {
             update { it.copy(scanning = false, message = "无法开始扫描，请检查蓝牙与权限") }
         }
@@ -71,8 +71,10 @@ object OsmoRepository : BridgeListener {
                 connecting = false,
                 pairing = null,
                 pendingAction = null,
+                reconnectAttempt = null,
                 status = CameraStatus(),
                 version = null,
+                modeInfo = null,
                 deviceName = "",
                 modelName = "",
                 devices = emptyList(),
@@ -253,7 +255,21 @@ object OsmoRepository : BridgeListener {
                     message = "连接失败：${json.optString("message")}",
                 )
             }
-            "status" -> update { it.copy(status = parseStatus(json)) }
+            "status" -> {
+                val status = parseStatus(json)
+                update { current ->
+                    current.copy(
+                        status = status,
+                        modeInfo = current.modeInfo.takeIf { current.status.modeCode == status.modeCode },
+                    )
+                }
+            }
+            "modeInfo" -> update {
+                val info = listOf(json.optString("name"), json.optString("parameters"))
+                    .filter { value -> value.isNotBlank() }
+                    .joinToString(" · ")
+                it.copy(modeInfo = info.ifBlank { null })
+            }
             "version" -> {
                 val product = json.optString("product")
                 val details = json.optString("details")
@@ -283,9 +299,10 @@ object OsmoRepository : BridgeListener {
             "warning", "error", "gpsError" ->
                 update { it.copy(message = json.optString("message")) }
             "reconnecting" -> update {
-                it.copy(message = "连接中断，正在重连（第 ${json.optInt("attempt")} 次）")
+                val attempt = json.optInt("attempt")
+                it.copy(reconnectAttempt = attempt, message = "连接中断，正在重连（第 ${attempt} 次）")
             }
-            "reconnected" -> update { it.copy(message = "已重新连接") }
+            "reconnected" -> update { it.copy(reconnectAttempt = null, message = "已重新连接") }
             "disconnected" -> {
                 stopGpsInternal()
                 update {
@@ -294,8 +311,10 @@ object OsmoRepository : BridgeListener {
                         connecting = false,
                         pairing = null,
                         pendingAction = null,
+                        reconnectAttempt = null,
                         status = CameraStatus(),
                         version = null,
+                        modeInfo = null,
                         deviceName = "",
                         modelName = "",
                     )

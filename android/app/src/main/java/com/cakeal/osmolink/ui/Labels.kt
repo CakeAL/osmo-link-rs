@@ -1,17 +1,18 @@
 package com.cakeal.osmolink.ui
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import com.cakeal.osmolink.data.CameraStatus
+import com.cakeal.osmolink.data.UiState
 
 /** Modes where the shutter, not start/stop recording, is the primary action. */
 internal val PHOTO_MODES = setOf("Photo", "PanoramicPhoto", "SubjectTracking")
 
 internal val CameraStatus.isRecording: Boolean
     get() = capturing && modeName !in PHOTO_MODES
+
+internal val UiState.canControlCamera: Boolean
+    get() = connected && status.hasData && reconnectAttempt == null && pendingAction == null
 
 /** Camera metrics use a monospace face inside the Material 3 type scale. */
 internal fun TextStyle.mono(): TextStyle = copy(fontFamily = FontFamily.Monospace)
@@ -51,12 +52,3 @@ internal fun temperatureLabel(status: CameraStatus): String = when (status.tempe
     3 -> "即将关机"
     else -> status.temperatureName
 }
-
-@Composable
-internal fun batteryColor(percent: Int): Color = when {
-    percent <= 15 -> MaterialTheme.colorScheme.error
-    percent <= 40 -> MaterialTheme.colorScheme.primary
-    else -> MaterialTheme.colorScheme.secondary
-}
-
-internal fun rssiLabel(rssi: Int?): String = rssi?.let { "$it dBm" } ?: "—"

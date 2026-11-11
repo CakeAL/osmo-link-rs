@@ -1,23 +1,24 @@
 package com.cakeal.osmolink.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cakeal.osmolink.R
@@ -46,27 +48,30 @@ internal fun ConnectScreen(
     onConnect: (Int) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        RemoteTopBar("Osmo Link") {
+            SettingsButton(onOpenSettings, enabled = !state.connecting)
+        }
         Column(
             modifier = Modifier
                 .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Osmo Link", style = MaterialTheme.typography.headlineLarge)
-                    Text(
-                        text = "通过蓝牙连接 DJI Osmo 相机",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                SettingsButton(onOpenSettings, enabled = !state.connecting)
+            DiscoveryHero()
+            Button(
+                onClick = onScan,
+                enabled = !state.scanning && !state.connecting,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) {
+                UiIcon(R.drawable.ic_ui_search, Modifier.size(ButtonDefaults.IconSize))
+                Text(
+                    text = if (state.hasSearched) "重新搜索相机" else "搜索相机",
+                    modifier = Modifier.padding(start = ButtonDefaults.IconSpacing),
+                )
             }
-            ScanCard(state, onScan)
             NearbyDevices(state, onConnect)
             ConnectionHints()
         }
@@ -74,43 +79,33 @@ internal fun ConnectScreen(
 }
 
 @Composable
-private fun ScanCard(state: UiState, onScan: () -> Unit) {
+private fun DiscoveryHero() {
     val colors = MaterialTheme.colorScheme
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = colors.primaryContainer,
-            contentColor = colors.onPrimaryContainer,
-        ),
+        color = colors.primaryContainer,
+        contentColor = colors.onPrimaryContainer,
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Surface(
-                color = colors.primary,
-                contentColor = colors.onPrimary,
-                shape = MaterialTheme.shapes.medium,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                    UiIcon(R.drawable.ic_ui_search)
+                Surface(color = colors.primary, contentColor = colors.onPrimary, shape = MaterialTheme.shapes.large) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        UiIcon(R.drawable.ic_ui_camera)
+                    }
                 }
+                StatusPill("蓝牙连接", icon = R.drawable.ic_ui_bluetooth)
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("查找附近的相机", style = MaterialTheme.typography.titleLarge)
-                Text("唤醒相机并开启无线连接", style = MaterialTheme.typography.bodyMedium)
-            }
-            Button(onClick = onScan, enabled = !state.scanning && !state.connecting) {
-                UiIcon(R.drawable.ic_ui_search, Modifier.size(ButtonDefaults.IconSize))
-                Text(
-                    text = when {
-                        state.connecting -> "连接中…"
-                        state.scanning -> "扫描中…"
-                        else -> "搜索相机"
-                    },
-                    modifier = Modifier.padding(start = ButtonDefaults.IconSpacing),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("连接 Osmo 相机", style = MaterialTheme.typography.headlineMedium)
+                Text("查看相机状态、切换拍摄模式和遥控拍摄。", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -125,73 +120,97 @@ private fun NearbyDevices(state: UiState, onConnect: (Int) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("附近设备", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            val status = when {
-                state.connecting -> "正在连接"
-                state.scanning -> "正在搜索"
-                state.devices.isNotEmpty() -> "找到 ${state.devices.size} 台相机"
-                else -> null
-            }
-            if (status != null) {
-                Text(status, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            Text(
+                "附近相机",
+                modifier = Modifier.weight(1f).semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (state.devices.isNotEmpty() && !state.connecting) {
+                StatusPill("${state.devices.size} 台", color = colors.secondaryContainer, contentColor = colors.onSecondaryContainer)
             }
         }
-        if (state.scanning || state.connecting) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-        ) {
-            if (state.devices.isEmpty()) {
-                Text(
-                    text = if (state.scanning) "正在搜索附近的相机…" else "尚未发现相机",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
+        when {
+            state.scanning || state.connecting -> RemoteCard {
+                ListItem(
+                    headlineContent = { Text(if (state.connecting) "正在连接相机" else "正在搜索相机") },
+                    supportingContent = {
+                        Text(if (state.connecting) "请留意相机屏幕上的配对提示。" else "请保持相机唤醒。")
+                    },
+                    leadingContent = { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-            } else {
-                state.devices.forEachIndexed { index, device ->
-                    if (index > 0) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    DeviceRow(device, enabled = !state.connecting, onClick = { onConnect(index) })
+            }
+            state.devices.isEmpty() -> RemoteCard {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(shape = CircleShape, color = colors.secondaryContainer, contentColor = colors.onSecondaryContainer) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            UiIcon(if (state.hasSearched) R.drawable.ic_ui_search else R.drawable.ic_ui_camera)
+                        }
+                    }
+                    Text(if (state.hasSearched) "没有找到相机" else "等待搜索", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = if (state.hasSearched) "唤醒相机并开启无线连接，然后重新搜索。" else "附近可连接的 Osmo 相机会显示在这里。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
                 }
+            }
+            else -> state.devices.forEachIndexed { index, device ->
+                DeviceRow(device, onClick = { onConnect(index) })
             }
         }
     }
 }
 
 @Composable
-private fun DeviceRow(device: DeviceItem, enabled: Boolean, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = {
-            Text(device.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        supportingContent = {
-            Text("${rssiLabel(device.rssi)} · ${device.id}", maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        leadingContent = {
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            ) {
-                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                    UiIcon(R.drawable.ic_ui_camera, Modifier.size(20.dp))
+private fun DeviceRow(device: DeviceItem, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surfaceContainer,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        ListItem(
+            headlineContent = { Text(device.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = {
+                val signal = device.rssi?.let { "$it dBm" } ?: "信号未知"
+                Text("$signal · ${device.id}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            leadingContent = {
+                Surface(shape = MaterialTheme.shapes.medium, color = colors.secondaryContainer, contentColor = colors.onSecondaryContainer) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        UiIcon(R.drawable.ic_ui_camera, Modifier.size(20.dp))
+                    }
                 }
-            }
-        },
-        trailingContent = {
-            FilledTonalButton(
-                onClick = onClick,
-                enabled = enabled,
-                modifier = Modifier.semantics { contentDescription = "连接 ${device.name}" },
-            ) {
-                Text("连接")
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-    )
+            },
+            trailingContent = { SignalBars(device.rssi) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
+    }
+}
+
+@Composable
+private fun SignalBars(rssi: Int?) {
+    val colors = MaterialTheme.colorScheme
+    val level = when {
+        rssi == null -> 0
+        rssi <= -80 -> 1
+        rssi <= -65 -> 2
+        rssi <= -50 -> 3
+        else -> 4
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+        repeat(4) { index ->
+            val color = if (index < level) colors.primary else colors.outlineVariant
+            Box(Modifier.width(3.dp).height((5 + 3 * index).dp).background(color, CircleShape))
+        }
+    }
 }
 
 @Composable

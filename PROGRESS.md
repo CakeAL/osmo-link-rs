@@ -389,3 +389,18 @@ Rust fmt, all 18 workspace tests, strict Clippy, the iOS device/simulator and
 Android cross-checks, and unsigned iPhone Simulator Debug and Release builds
 passed. The simulator verified the discovery, Settings and About layouts. GPS
 injection and permission behavior still need iPhone hardware verification.
+
+## Android: Material You remote layout refresh
+
+Reworked discovery and pairing around the scan action, connection state, and
+camera signal strength. The remote shows the camera status, mode selection,
+details, and GPS injection in separate Material 3 cards. The GPS card shows
+the latest rate, accuracy, and satellite count after the first valid fix.
+The capture dock and mode selector are disabled until camera state is ready
+and during reconnection. About gives the repository and license their own
+sections. The app continues to use the existing dynamic color and
+appearance settings.
+
+Debug and R8 release builds and Android unit tests passed. The updated app
+launched on the API 37 emulator. Camera and GPS behavior still need hardware
+verification.
