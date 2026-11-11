@@ -1,9 +1,10 @@
 //! Shared JSON projections of protocol enums for the mobile apps.
 //!
-//! Labels stay in English and generic; localization belongs to the app layer.
+//! Labels stay in English and generic; error details are the exception because
+//! both mobile UIs show the same Chinese explanation.
 use osmo_core::{
     ActionPhotoSize, CameraMode, CameraModel, CameraStatus, CaptureFormat, CaptureRate, EisMode,
-    Osmo360PhotoSize, PhotoRatio, VideoResolution,
+    Error, Osmo360PhotoSize, PhotoRatio, ReturnCode, VideoResolution,
 };
 use serde_json::{Value, json};
 
@@ -45,6 +46,27 @@ pub fn selectable_modes(model: CameraModel) -> impl Iterator<Item = CameraMode> 
         .iter()
         .copied()
         .filter(move |mode| model != CameraModel::Action4 || *mode != SubjectTracking)
+}
+
+/// User-facing detail for a failed camera command.
+///
+/// The original error text is kept so the raw code stays visible. Unknown
+/// codes get the storage-card hint because a missing card is the most common
+/// undocumented failure on the Action 4; known codes get their own text.
+pub fn error_message(error: &Error) -> String {
+    let Error::Camera(code) = error else {
+        return error.to_string();
+    };
+    let detail = match code {
+        ReturnCode::Success => "相机返回成功状态，无需重试",
+        ReturnCode::ParseError => "相机无法解析该命令，请重试；反复失败时请检查相机固件",
+        ReturnCode::ExecutionFailed => "相机拒绝执行该命令，请检查拍摄模式、存储卡和相机状态后重试",
+        ReturnCode::UndefinedError => "相机返回未定义错误，请重启相机后重试",
+        ReturnCode::Unknown(_) => {
+            "可能未插卡（存储卡未插入或不可用）；如果已插卡，请检查卡片状态或重启相机后重试"
+        }
+    };
+    format!("{error}：{detail}")
 }
 
 pub fn mode_catalog(model: CameraModel) -> Vec<Value> {
@@ -159,6 +181,24 @@ mod tests {
             json!({ "code": CameraMode::PanoramicVideo.code(), "name": "PanoramicVideo" })
         );
         assert!(mode_catalog(CameraModel::Unknown(0)).is_empty());
+    }
+
+    #[test]
+    fn camera_error_message_keeps_the_raw_code_and_adds_the_card_hint() {
+        let message = error_message(&Error::Camera(ReturnCode::Unknown(0xd6)));
+        assert!(message.contains("0xd6"));
+        assert!(message.contains("Unknown(214)"));
+        assert!(message.contains("可能未插卡"));
+    }
+
+    #[test]
+    fn known_camera_errors_get_specific_details() {
+        let parse = error_message(&Error::Camera(ReturnCode::ParseError));
+        let execution = error_message(&Error::Camera(ReturnCode::ExecutionFailed));
+        assert!(parse.contains("解析"));
+        assert!(execution.contains("拒绝执行"));
+        assert_ne!(parse, execution);
+        assert_eq!(error_message(&Error::Disconnected), "camera disconnected");
     }
 
     #[test]

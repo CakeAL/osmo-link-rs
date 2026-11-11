@@ -55,6 +55,12 @@ val buildRust = tasks.register<Exec>("buildRust") {
 
 tasks.named("preBuild").configure { dependsOn(buildRust) }
 
+// `preBuild` is not an input of AGP's native merge tasks, so a parallel build
+// can package jniLibs before cargo-ndk finishes. Make the dependency explicit;
+// otherwise an APK can silently contain the previous libosmo_bridge.so.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }
+    .configureEach { dependsOn(buildRust) }
+
 dependencies {
     implementation(project(":btleplug-jni"))
     implementation(platform(libs.androidx.compose.bom))

@@ -493,3 +493,28 @@ passed. The unsigned arm64 iPhone Release build passed and was packaged as
 `ios/build/OsmoLink-unsigned.ipa`; it needs TrollStore or re-signing before it
 can be installed. Scan-triggered reconnection still needs iPhone and Android
 hardware verification.
+
+## Mobile: readable camera errors, battery alerts, and iOS mode gestures
+
+Camera ACK failures now carry a readable detail. The four documented common
+return codes have their own Chinese explanation; undocumented codes keep the
+original error text and append a missing-storage-card hint, so a `0xD6`
+rejection while recording tells the user to check the card. Both bridges route
+command, connect, version, and status-subscription failures through the shared
+`mobile_status::error_message` formatter.
+
+The iOS mode-row hint uses primary text at higher contrast. A drag on the mode
+row disables the parent scroll view while it is active and starts at a shorter
+distance, so a vertical swipe changes modes instead of scrolling the page.
+
+Both apps vibrate and post one notification when the connected camera battery
+drops below a configurable threshold (5/10/15/20/30%, default 10%). iOS asks
+for notification authorization on connect and presents the banner while the app
+is foreground; Android uses the `VIBRATE` permission and a separate
+high-importance `osmo_link_battery` channel. The alert re-arms when the battery
+recovers or a new connection starts, and can be disabled in settings.
+
+Rust formatting, 28 workspace tests, and strict Clippy passed. Android Debug
+and R8 Release builds and unit tests passed; the unsigned arm64 iPhone Release
+build passed. Battery alerts, the iOS mode gesture, and the hardware return-code
+messages still need real-camera verification.

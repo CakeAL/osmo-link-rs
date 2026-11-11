@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.cakeal.osmolink.BuildConfig
 import com.cakeal.osmolink.R
 import com.cakeal.osmolink.data.AppPreferences
+import com.cakeal.osmolink.data.BatteryAlertSettings
 import com.cakeal.osmolink.data.ThemeMode
 
 private val RGB_HEX = Regex("[0-9A-Fa-f]{6}")
@@ -79,6 +80,7 @@ internal fun SettingsScreen(
         permissions = context.permissionStatus()
     }
     var editor by rememberSaveable { mutableStateOf<AppearanceEditor?>(null) }
+    var batteryDialog by rememberSaveable { mutableStateOf(false) }
     val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
 
     SettingsPage("设置", onBack) {
@@ -172,6 +174,37 @@ internal fun SettingsScreen(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
         }
+        SettingsGroup("电量提醒") {
+            ListItem(
+                headlineContent = { Text("低电量提醒") },
+                supportingContent = {
+                    Text(
+                        if (preferences.batteryAlertEnabled) {
+                            "电量低于 ${preferences.batteryAlertThreshold}% 时震动并发送通知"
+                        } else {
+                            "已关闭，不会震动或发送通知"
+                        },
+                    )
+                },
+                trailingContent = {
+                    Switch(checked = preferences.batteryAlertEnabled, onCheckedChange = null)
+                },
+                modifier = Modifier.toggleable(
+                    value = preferences.batteryAlertEnabled,
+                    role = Role.Switch,
+                    onValueChange = preferences::updateBatteryAlertEnabled,
+                ),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            if (preferences.batteryAlertEnabled) {
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                SettingsRow(
+                    "提醒阈值",
+                    "低于 ${preferences.batteryAlertThreshold}% 时提醒",
+                    onClick = { batteryDialog = true },
+                )
+            }
+        }
         SettingsGroup {
             SettingsRow("关于 Osmo Link", "版本 ${BuildConfig.VERSION_NAME}", onClick = onAbout)
         }
@@ -196,6 +229,44 @@ internal fun SettingsScreen(
         )
         null -> Unit
     }
+
+    if (batteryDialog) {
+        BatteryThresholdDialog(
+            current = preferences.batteryAlertThreshold,
+            onSelect = { threshold ->
+                preferences.updateBatteryAlertThreshold(threshold)
+                batteryDialog = false
+            },
+            onDismiss = { batteryDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun BatteryThresholdDialog(current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("低电量提醒阈值") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                for (threshold in BatteryAlertSettings.THRESHOLDS) {
+                    ListItem(
+                        headlineContent = { Text("低于 $threshold%") },
+                        leadingContent = {
+                            RadioButton(selected = current == threshold, onClick = null)
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.selectable(
+                            selected = current == threshold,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(threshold) },
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use mobile_status::{mode_catalog, selectable_modes, status_json};
+use mobile_status::{error_message, mode_catalog, selectable_modes, status_json};
 use osmo_core::{
     Camera, CameraMode, ConnectOptions, ControllerIdentity, Device, Error, Event, GpsSample,
     Scanner, StatusPushMode, VerificationMode,
@@ -142,6 +142,11 @@ fn report(callback: Callback, kind: &str, error: impl std::fmt::Display) {
     emit(callback, kind, json!({ "message": error.to_string() }));
 }
 
+/// Reports a bridge error, adding return-code details for camera rejections.
+fn report_camera(callback: Callback, kind: &str, error: &Error) {
+    emit(callback, kind, json!({ "message": error_message(error) }));
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct Controller {
     identity: ControllerIdentity,
@@ -227,7 +232,7 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
                             reconnect_saved(&directory, &devices, callback, &mut requests).await;
                         }
                     }
-                    Err(error) => report(callback, "scanFailed", error),
+                    Err(error) => report_camera(callback, "scanFailed", &error),
                 }
             }
             Request::Connect(index) => {
@@ -239,10 +244,14 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
                                 *slot = None;
                             }
                         }
-                        Err(error) => report_connect_failed(callback, false, error),
+                        Err(error) => report_connect_failed(callback, false, error.as_ref()),
                     }
                 } else {
-                    report_connect_failed(callback, false, "请重新搜索相机。");
+                    emit(
+                        callback,
+                        "connectFailed",
+                        json!({ "message": "请重新搜索相机。", "auto": false }),
+                    );
                 }
             }
             Request::Disconnect => emit(callback, "disconnected", json!({})),
@@ -283,15 +292,23 @@ async fn reconnect_saved(
                 *slot = None;
             }
         }
-        Err(error) => report_connect_failed(callback, true, error),
+        Err(error) => report_connect_failed(callback, true, error.as_ref()),
     }
 }
 
-fn report_connect_failed(callback: Callback, auto: bool, error: impl std::fmt::Display) {
+fn report_connect_failed(
+    callback: Callback,
+    auto: bool,
+    error: &(dyn std::error::Error + 'static),
+) {
+    let message = error
+        .downcast_ref::<Error>()
+        .map(error_message)
+        .unwrap_or_else(|| error.to_string());
     emit(
         callback,
         "connectFailed",
-        json!({ "message": error.to_string(), "auto": auto }),
+        json!({ "message": message, "auto": auto }),
     );
 }
 
@@ -349,7 +366,7 @@ async fn session(camera: Arc<Camera>, callback: Callback, requests: &mut mpsc::R
         .subscribe_status(StatusPushMode::PeriodicAndChanges)
         .await
     {
-        report(callback, "warning", error);
+        report_camera(callback, "warning", &error);
     }
     if let Ok(version) = camera.version().await {
         emit(callback, "version", json!({ "details": version.details }));
@@ -376,7 +393,7 @@ async fn session(camera: Arc<Camera>, callback: Callback, requests: &mut mpsc::R
                         };
                         match result {
                             Ok(()) => emit(callback, "disconnected", json!({})),
-                            Err(error) => report(callback, "disconnected", error),
+                            Err(error) => report_camera(callback, "disconnected", &error),
                         }
                         return;
                     }
@@ -384,7 +401,7 @@ async fn session(camera: Arc<Camera>, callback: Callback, requests: &mut mpsc::R
                 };
                 match result {
                     Ok(()) => emit(callback, "commandDone", json!({})),
-                    Err(error) => report(callback, "commandFailed", error),
+                    Err(error) => report_camera(callback, "commandFailed", &error),
                 }
             }
             event = events.recv() => match event {

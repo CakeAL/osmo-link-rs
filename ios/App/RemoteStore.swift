@@ -1,6 +1,8 @@
 import Foundation
 import OSLog
 import SwiftUI
+import UIKit
+import UserNotifications
 
 private let bridgeCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { event in
     guard let event else { return }
@@ -11,6 +13,16 @@ private let bridgeCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { e
     }
 }
 
+private final class BatteryNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+
 @MainActor
 final class RemoteStore: ObservableObject {
     enum Phase: Equatable {
@@ -18,6 +30,7 @@ final class RemoteStore: ObservableObject {
     }
 
     static let shared = RemoteStore()
+    static let batteryThresholds = [5, 10, 15, 20, 30]
 
     @Published private(set) var phase = Phase.idle
     @Published private(set) var devices: [CameraDevice] = []
@@ -51,12 +64,24 @@ final class RemoteStore: ObservableObject {
             UserDefaults.standard.set(autoConnectEnabled, forKey: "autoConnectPaired")
         }
     }
+    @Published var lowBatteryAlertEnabled = UserDefaults.standard.object(forKey: "lowBatteryAlertEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(lowBatteryAlertEnabled, forKey: "lowBatteryAlertEnabled")
+        }
+    }
+    @Published var lowBatteryThreshold = RemoteStore.storedBatteryThreshold {
+        didSet {
+            UserDefaults.standard.set(lowBatteryThreshold, forKey: "lowBatteryAlertThreshold")
+        }
+    }
 
     let location = LocationInjector()
 
     private let logger = Logger(subsystem: "com.cakeal.osmolink", category: "Bridge")
+    private let notificationDelegate = BatteryNotificationDelegate()
     private let activity: (any RecordingActivityUpdating)?
     private var recording: RecordingState?
+    private var lowBatteryAlertSent = false
     private var isActive = false
     private var started = false
 
@@ -68,6 +93,12 @@ final class RemoteStore: ObservableObject {
         } else {
             activity = nil
         }
+        UNUserNotificationCenter.current().delegate = notificationDelegate
+    }
+
+    private static var storedBatteryThreshold: Int {
+        let stored = UserDefaults.standard.integer(forKey: "lowBatteryAlertThreshold")
+        return batteryThresholds.contains(stored) ? stored : 10
     }
 
     var modes: [CameraMode] { camera?.modes ?? [] }
@@ -98,6 +129,11 @@ final class RemoteStore: ObservableObject {
         message = nil
         hasSearched = true
         phase = .scanning
+    }
+
+    func requestBatteryNotificationPermission() {
+        guard lowBatteryAlertEnabled else { return }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     func connect(_ device: CameraDevice) {
@@ -172,6 +208,8 @@ final class RemoteStore: ObservableObject {
             self.camera = camera
             pairing = nil
             phase = .connected
+            lowBatteryAlertSent = false
+            requestBatteryNotificationPermission()
             if locationInjectionEnabled {
                 location.start()
             }
@@ -180,6 +218,7 @@ final class RemoteStore: ObservableObject {
                 if self.status?.modeCode != status.modeCode { modeInfo = nil }
                 self.status = status
                 updateRecording(from: status)
+                checkLowBattery(status.battery)
             }
         case let .version(details):
             version = details.isEmpty ? nil : details
@@ -207,6 +246,7 @@ final class RemoteStore: ObservableObject {
             modeInfo = nil
             pending = false
             recording = nil
+            lowBatteryAlertSent = false
             location.stop()
             message = reason
             updateActivity()
@@ -227,6 +267,28 @@ final class RemoteStore: ObservableObject {
             logger.warning("\(warning, privacy: .public)")
             if phase == .connected || phase == .disconnecting { message = warning }
         }
+    }
+
+    private func checkLowBattery(_ battery: Int) {
+        guard lowBatteryAlertEnabled else { return }
+        guard battery < lowBatteryThreshold else {
+            lowBatteryAlertSent = false
+            return
+        }
+        guard !lowBatteryAlertSent else { return }
+        lowBatteryAlertSent = true
+
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        let content = UNMutableNotificationContent()
+        content.title = "相机电量低"
+        content.body = "\(camera?.title ?? "相机") 电量仅剩 \(battery)%，请及时充电或更换电池。"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "low-battery-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 
     private func updateRecording(from status: CameraStatus) {

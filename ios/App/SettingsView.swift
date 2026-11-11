@@ -33,6 +33,27 @@ struct SettingsView<Route: Hashable>: View {
             }
 
             Section {
+                Toggle("低电量提醒", isOn: Binding(
+                    get: { remote.lowBatteryAlertEnabled },
+                    set: { enabled in
+                        remote.lowBatteryAlertEnabled = enabled
+                        if enabled { remote.requestBatteryNotificationPermission() }
+                    }
+                ))
+                if remote.lowBatteryAlertEnabled {
+                    Picker("提醒阈值", selection: $remote.lowBatteryThreshold) {
+                        ForEach(RemoteStore.batteryThresholds, id: \.self) { threshold in
+                            Text("低于 \(threshold)%").tag(threshold)
+                        }
+                    }
+                }
+            } header: {
+                Text("电量提醒")
+            } footer: {
+                Text("开启后，连接相机时电量低于所选阈值会震动并发送通知。通知权限可在系统设置中管理。")
+            }
+
+            Section {
                 Toggle("自动连接已配对相机", isOn: $remote.autoConnectEnabled)
             } header: {
                 Text("连接")

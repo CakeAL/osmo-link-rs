@@ -17,7 +17,8 @@ internal data class Appearance(
 )
 
 internal class AppPreferences(context: Context) {
-    private val storage = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+    private val storage = context.getSharedPreferences(BatteryAlertSettings.FILE, Context.MODE_PRIVATE)
+    private val batteryAlerts = BatteryAlertSettings.load(storage)
 
     var appearance by mutableStateOf(
         Appearance(
@@ -34,6 +35,12 @@ internal class AppPreferences(context: Context) {
     var autoConnect by mutableStateOf(storage.getBoolean("auto_connect", true))
         private set
 
+    var batteryAlertEnabled by mutableStateOf(batteryAlerts.enabled)
+        private set
+
+    var batteryAlertThreshold by mutableStateOf(batteryAlerts.threshold)
+        private set
+
     fun updateCompatibleBack(enabled: Boolean) {
         storage.edit().putBoolean("compatible_back", enabled).apply()
         compatibleBack = enabled
@@ -42,6 +49,17 @@ internal class AppPreferences(context: Context) {
     fun updateAutoConnect(enabled: Boolean) {
         storage.edit().putBoolean("auto_connect", enabled).apply()
         autoConnect = enabled
+    }
+
+    fun updateBatteryAlertEnabled(enabled: Boolean) {
+        BatteryAlertSettings.updateEnabled(storage, enabled)
+        batteryAlertEnabled = enabled
+    }
+
+    fun updateBatteryAlertThreshold(threshold: Int) {
+        if (threshold !in BatteryAlertSettings.THRESHOLDS) return
+        BatteryAlertSettings.updateThreshold(storage, threshold)
+        batteryAlertThreshold = threshold
     }
 
     fun updateAppearance(value: Appearance) {

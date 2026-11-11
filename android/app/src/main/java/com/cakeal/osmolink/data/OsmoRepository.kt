@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.cakeal.osmolink.bridge.BridgeListener
 import com.cakeal.osmolink.bridge.OsmoNative
 import com.cakeal.osmolink.location.GpsTracker
+import com.cakeal.osmolink.service.BatteryAlertNotifier
 import com.cakeal.osmolink.service.OsmoService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,8 @@ object OsmoRepository : BridgeListener {
     private var gps: GpsTracker? = null
     private var defaultGpsPending = false
     private val fixTimes = ArrayDeque<Long>()
+    @Volatile
+    private var lowBatteryAlertSent = false
 
     /** Called once from [com.cakeal.osmolink.OsmoApp]. */
     fun attach(application: Context) {
@@ -241,18 +244,21 @@ object OsmoRepository : BridgeListener {
                     ),
                 )
             }
-            "connected" -> update {
-                defaultGpsPending = true
-                it.copy(
-                    connected = true,
-                    connecting = false,
-                    pairing = null,
-                    devices = emptyList(),
-                    deviceName = json.optString("name"),
-                    modelName = json.optString("modelName"),
-                    modes = parseModes(json),
-                    message = null,
-                )
+            "connected" -> {
+                lowBatteryAlertSent = false
+                update {
+                    defaultGpsPending = true
+                    it.copy(
+                        connected = true,
+                        connecting = false,
+                        pairing = null,
+                        devices = emptyList(),
+                        deviceName = json.optString("name"),
+                        modelName = json.optString("modelName"),
+                        modes = parseModes(json),
+                        message = null,
+                    )
+                }
             }
             "connectFailed" -> update {
                 val detail = json.optString("message")
@@ -274,6 +280,7 @@ object OsmoRepository : BridgeListener {
                         modeInfo = current.modeInfo.takeIf { current.status.modeCode == status.modeCode },
                     )
                 }
+                checkLowBattery(status.battery)
             }
             "modeInfo" -> update {
                 val info = listOf(json.optString("name"), json.optString("parameters"))
@@ -315,6 +322,7 @@ object OsmoRepository : BridgeListener {
             }
             "reconnected" -> update { it.copy(reconnectAttempt = null, message = "已重新连接") }
             "disconnected" -> {
+                lowBatteryAlertSent = false
                 stopGpsInternal()
                 update {
                     it.copy(
@@ -334,6 +342,22 @@ object OsmoRepository : BridgeListener {
             }
             "gps" -> Unit
         }
+    }
+
+    /** Alerts once when the battery crosses below the configured threshold. */
+    @Synchronized
+    private fun checkLowBattery(battery: Int) {
+        if (!attached) return
+        val settings = BatteryAlertSettings.load(context)
+        if (!settings.enabled) return
+        if (battery >= settings.threshold) {
+            lowBatteryAlertSent = false
+            return
+        }
+        if (!BatteryAlertNotifier.shouldAlert(battery, settings.threshold, lowBatteryAlertSent)) return
+        lowBatteryAlertSent = true
+        val name = _state.value.deviceName.ifBlank { "Osmo 相机" }
+        BatteryAlertNotifier.notify(context, name, battery, settings.threshold)
     }
 
     private fun parseModes(json: JSONObject): List<ModeItem> {

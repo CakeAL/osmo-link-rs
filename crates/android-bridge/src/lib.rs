@@ -33,7 +33,7 @@ use osmo_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use mobile_status::{mode_catalog, selectable_modes, status_json};
+use mobile_status::{error_message, mode_catalog, selectable_modes, status_json};
 
 struct BridgeState {
     devices: Vec<Device>,
@@ -167,7 +167,7 @@ where
             Ok(()) => emit("command", json!({ "action": action, "ok": true })),
             Err(error) => emit(
                 "command",
-                json!({ "action": action, "ok": false, "error": error.to_string() }),
+                json!({ "action": action, "ok": false, "error": error_message(&error) }),
             ),
         }
     });
@@ -445,20 +445,20 @@ fn start_connect(device: Device, dir: PathBuf, mut saved: SavedState, auto: bool
                     .subscribe_status(StatusPushMode::PeriodicAndChanges)
                     .await
                 {
-                    emit("warning", json!({ "message": error.to_string() }));
+                    emit("warning", json!({ "message": error_message(&error) }));
                 }
                 match camera.version().await {
                     Ok(version) => emit(
                         "version",
                         json!({ "product": version.product, "details": version.details }),
                     ),
-                    Err(error) => emit("warning", json!({ "message": error.to_string() })),
+                    Err(error) => emit("warning", json!({ "message": error_message(&error) })),
                 }
             }
             Err(error) => {
                 emit(
                     "connectFailed",
-                    json!({ "message": error.to_string(), "auto": auto }),
+                    json!({ "message": error_message(&error), "auto": auto }),
                 );
             }
         }
@@ -632,7 +632,7 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeVersion<
                     "version",
                     json!({ "product": version.product, "details": version.details }),
                 ),
-                Err(error) => emit("warning", json!({ "message": error.to_string() })),
+                Err(error) => emit("warning", json!({ "message": error_message(&error) })),
             }
         });
         Ok(true)

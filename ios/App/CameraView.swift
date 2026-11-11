@@ -6,6 +6,7 @@ struct CameraView: View {
     let camera: ConnectedCamera
 
     @Environment(\.openURL) private var openURL
+    @State private var modeInteracting = false
 
     var body: some View {
         ScrollView {
@@ -22,6 +23,7 @@ struct CameraView: View {
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
+        .scrollDisabled(modeInteracting)
         .background(AppBackground())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             captureDock
@@ -161,7 +163,8 @@ struct CameraView: View {
                         status: status,
                         modes: remote.modes,
                         canSwitch: remote.canChangeMode,
-                        onSelect: remote.selectMode
+                        onSelect: remote.selectMode,
+                        isInteracting: $modeInteracting
                     )
                     .id(status.modeCode)
                 } else {
@@ -375,6 +378,7 @@ private struct ModeSelector: View {
     let modes: [CameraMode]
     let canSwitch: Bool
     let onSelect: (CameraMode) -> Void
+    @Binding var isInteracting: Bool
 
     @State private var expanded = false
     @State private var position: CGFloat?
@@ -401,6 +405,7 @@ private struct ModeSelector: View {
         .contentShape(Rectangle())
         .highPriorityGesture(modeDrag, including: canSwitch ? .all : .none)
         .onChange(of: dragging) { active in
+            isInteracting = active
             if !active {
                 lastTranslation = nil
                 position = nil
@@ -411,8 +416,10 @@ private struct ModeSelector: View {
                 expanded = false
                 lastTranslation = nil
                 position = nil
+                isInteracting = false
             }
         }
+        .onDisappear { isInteracting = false }
     }
 
     private var trigger: some View {
@@ -427,8 +434,8 @@ private struct ModeSelector: View {
                     Text(status.modeTitle)
                         .font(.subheadline.weight(.semibold))
                     Text(hint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.primary.opacity(0.78))
                 }
                 Spacer(minLength: 8)
                 if canSwitch {
@@ -454,16 +461,20 @@ private struct ModeSelector: View {
     }
 
     private var modeDrag: some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .updating($dragging) { _, active, _ in active = true }
             .onChanged { value in
                 guard canSwitch else { return }
+                // Claim the drag from the surrounding ScrollView before it
+                // turns a vertical mode swipe into a page scroll.
+                isInteracting = true
                 let height = value.translation.height
                 guard lastTranslation != nil || abs(height) > abs(value.translation.width) else { return }
                 expanded = true
                 move(to: height)
             }
             .onEnded { value in
+                defer { isInteracting = false }
                 guard canSwitch, lastTranslation != nil else { return }
                 move(to: value.translation.height)
                 let index = Int(wheelPosition.rounded())
