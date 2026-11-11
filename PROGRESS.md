@@ -475,3 +475,21 @@ The SwiftUI mode control uses the same in-place wheel, continuous drag,
 center highlight, and mode icons. Arm64 iOS Simulator Debug and unsigned
 iPhone Release builds passed. Touch interaction on iPhone and mode changes
 on a physical camera remain unverified.
+
+## Mobile: reconnect paired cameras after scanning
+
+Both bridges now treat a finished scan as a reconnect opportunity. If the
+persisted pairing history contains a camera found in the scan, the bridge
+connects without waiting for a tap. The most recently connected camera wins
+when several saved cameras are in range, falling back to the strongest signal
+order of the scan. Manual selection keeps using the same connect path, and a
+settings switch on both platforms turns automatic reconnection off so a
+different camera can be paired.
+
+Bridge unit tests cover the last-device preference, the signal-order fallback,
+and cameras without pairing history. Rust formatting, 26 workspace tests, and
+strict Clippy passed. Android Debug and R8 Release builds and unit tests
+passed. The unsigned arm64 iPhone Release build passed and was packaged as
+`ios/build/OsmoLink-unsigned.ipa`; it needs TrollStore or re-signing before it
+can be installed. Scan-triggered reconnection still needs iPhone and Android
+hardware verification.

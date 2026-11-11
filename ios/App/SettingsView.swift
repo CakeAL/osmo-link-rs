@@ -33,6 +33,14 @@ struct SettingsView<Route: Hashable>: View {
             }
 
             Section {
+                Toggle("自动连接已配对相机", isOn: $remote.autoConnectEnabled)
+            } header: {
+                Text("连接")
+            } footer: {
+                Text("搜索时如果发现之前连接过的相机，会直接连接上次使用的那台。关闭后可从附近相机列表手动选择。")
+            }
+
+            Section {
                 Button {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 } label: {

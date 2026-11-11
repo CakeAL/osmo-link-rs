@@ -61,6 +61,28 @@ struct SavedState {
     identity: ControllerIdentity,
     #[serde(default)]
     paired: Vec<String>,
+    /// Most recently connected camera, preferred when several saved cameras
+    /// are in range at the same time.
+    #[serde(default)]
+    last: Option<String>,
+}
+
+/// Index into the RSSI-sorted scan list of the camera to reconnect to.
+///
+/// The last connected camera wins when it is in range; otherwise the strongest
+/// previously paired camera is used, matching the scan result order.
+fn preferred_paired<'a, I>(ids: I, saved: &SavedState) -> Option<usize>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let ids: Vec<&str> = ids.into_iter().collect();
+    if let Some(last) = saved.last.as_deref()
+        && let Some(index) = ids.iter().position(|id| *id == last)
+    {
+        return Some(index);
+    }
+    ids.iter()
+        .position(|id| saved.paired.iter().any(|paired| paired.as_str() == *id))
 }
 
 fn load_saved(dir: &Path) -> SavedState {
@@ -230,6 +252,7 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScan<'lo
     mut unowned: EnvUnowned<'local>,
     _this: JObject<'local>,
     seconds: jint,
+    auto_connect: jboolean,
 ) -> jboolean {
     run_bool(&mut unowned, |_env| {
         let Some(runtime) = RUNTIME.get() else {
@@ -287,11 +310,28 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScan<'lo
                             })
                         })
                         .collect();
+                    let reconnect = if auto_connect {
+                        STATE_DIR.get().and_then(|dir| {
+                            let saved = load_saved(dir);
+                            preferred_paired(
+                                devices.iter().map(|device| device.id.as_str()),
+                                &saved,
+                            )
+                            .map(|index| (devices[index].clone(), dir.clone(), saved))
+                        })
+                    } else {
+                        None
+                    };
                     if let Ok(mut state) = STATE.lock() {
                         state.scanning = false;
                         state.devices = devices;
                     }
                     emit("devices", json!({ "devices": list }));
+                    // Publish the scan list before connecting so a failed
+                    // automatic attempt falls back to manual selection.
+                    if let Some((device, dir, saved)) = reconnect {
+                        start_connect(device, dir, saved, true);
+                    }
                 }
                 Err(error) => {
                     if let Ok(mut state) = STATE.lock() {
@@ -314,9 +354,12 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeConnect<
     index: jint,
 ) -> jboolean {
     run_bool(&mut unowned, |_env| {
-        let (Some(runtime), Some(dir)) = (RUNTIME.get(), STATE_DIR.get()) else {
+        let Some(dir) = STATE_DIR.get() else {
             return Ok(false);
         };
+        if RUNTIME.get().is_none() {
+            return Ok(false);
+        }
         let device = {
             let Ok(state) = STATE.lock() else {
                 return Ok(false);
@@ -335,75 +378,92 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeConnect<
         };
 
         let dir = dir.clone();
-        let mut saved = load_saved(&dir);
-        let first_time = !saved.paired.contains(&device.id);
-        let mut options = ConnectOptions::new(saved.identity);
-        options.verification_code = 2333;
-        options.verification_mode = if first_time {
-            VerificationMode::Required
-        } else {
-            VerificationMode::Automatic
-        };
-        let identity = options.identity;
-        let epoch = EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
-        emit(
-            "pairing",
-            json!({
-                "code": options.verification_code,
-                "device": device.name,
-                "firstTime": first_time,
-            }),
-        );
+        let saved = load_saved(&dir);
+        Ok(start_connect(device, dir, saved, false))
+    })
+}
 
-        runtime.spawn(async move {
-            match Camera::connect(&device, options).await {
-                Ok(camera) => {
-                    if EPOCH.load(Ordering::SeqCst) != epoch {
-                        let _ = camera.disconnect().await;
-                        return;
-                    }
-                    saved.identity = identity;
-                    if !saved.paired.contains(&device.id) {
-                        saved.paired.push(device.id.clone());
-                    }
-                    let _ = save_saved(&dir, &saved);
+/// Starts one connection attempt and the event pump on success.
+///
+/// Manual selection and automatic reconnection share this path. The caller
+/// passes the pairing snapshot it used so a success persists exactly the
+/// identity the camera verified.
+fn start_connect(device: Device, dir: PathBuf, mut saved: SavedState, auto: bool) -> bool {
+    let Some(runtime) = RUNTIME.get() else {
+        return false;
+    };
+    let first_time = !saved.paired.contains(&device.id);
+    let mut options = ConnectOptions::new(saved.identity);
+    options.verification_code = 2333;
+    options.verification_mode = if first_time {
+        VerificationMode::Required
+    } else {
+        VerificationMode::Automatic
+    };
+    let identity = options.identity;
+    let epoch = EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    emit(
+        "pairing",
+        json!({
+            "code": options.verification_code,
+            "device": device.name,
+            "firstTime": first_time,
+            "auto": auto,
+        }),
+    );
 
-                    let camera = Arc::new(camera);
-                    if let Ok(mut state) = STATE.lock() {
-                        state.camera = Some(camera.clone());
-                    }
-                    emit(
-                        "connected",
-                        json!({
-                            "modelName": format!("{:?}", camera.device_id),
-                            "modelCode": camera.device_id.code(),
-                            "name": device.name,
-                            "modes": mode_catalog(camera.device_id),
-                        }),
-                    );
-                    spawn_event_pump(camera.clone(), epoch);
-
-                    if let Err(error) = camera
-                        .subscribe_status(StatusPushMode::PeriodicAndChanges)
-                        .await
-                    {
-                        emit("warning", json!({ "message": error.to_string() }));
-                    }
-                    match camera.version().await {
-                        Ok(version) => emit(
-                            "version",
-                            json!({ "product": version.product, "details": version.details }),
-                        ),
-                        Err(error) => emit("warning", json!({ "message": error.to_string() })),
-                    }
+    runtime.spawn(async move {
+        match Camera::connect(&device, options).await {
+            Ok(camera) => {
+                if EPOCH.load(Ordering::SeqCst) != epoch {
+                    let _ = camera.disconnect().await;
+                    return;
                 }
-                Err(error) => {
-                    emit("connectFailed", json!({ "message": error.to_string() }));
+                saved.identity = identity;
+                if !saved.paired.contains(&device.id) {
+                    saved.paired.push(device.id.clone());
+                }
+                saved.last = Some(device.id.clone());
+                let _ = save_saved(&dir, &saved);
+
+                let camera = Arc::new(camera);
+                if let Ok(mut state) = STATE.lock() {
+                    state.camera = Some(camera.clone());
+                }
+                emit(
+                    "connected",
+                    json!({
+                        "modelName": format!("{:?}", camera.device_id),
+                        "modelCode": camera.device_id.code(),
+                        "name": device.name,
+                        "modes": mode_catalog(camera.device_id),
+                    }),
+                );
+                spawn_event_pump(camera.clone(), epoch);
+
+                if let Err(error) = camera
+                    .subscribe_status(StatusPushMode::PeriodicAndChanges)
+                    .await
+                {
+                    emit("warning", json!({ "message": error.to_string() }));
+                }
+                match camera.version().await {
+                    Ok(version) => emit(
+                        "version",
+                        json!({ "product": version.product, "details": version.details }),
+                    ),
+                    Err(error) => emit("warning", json!({ "message": error.to_string() })),
                 }
             }
-        });
-        Ok(true)
-    })
+            Err(error) => {
+                emit(
+                    "connectFailed",
+                    json!({ "message": error.to_string(), "auto": auto }),
+                );
+            }
+        }
+    });
+    true
 }
 
 fn spawn_event_pump(camera: Arc<Camera>, epoch: u64) {
@@ -624,4 +684,36 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeGpsStop<
         emit("gps", json!({ "active": false }));
         Ok(true)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn saved(paired: &[&str], last: Option<&str>) -> SavedState {
+        SavedState {
+            identity: ControllerIdentity::default(),
+            paired: paired.iter().map(|id| (*id).to_owned()).collect(),
+            last: last.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn auto_connect_prefers_the_last_camera_when_it_is_in_range() {
+        let state = saved(&["a", "b"], Some("b"));
+        assert_eq!(preferred_paired(["a", "b"], &state), Some(1));
+    }
+
+    #[test]
+    fn auto_connect_falls_back_to_the_strongest_paired_camera() {
+        let state = saved(&["a", "b"], Some("c"));
+        assert_eq!(preferred_paired(["z", "b", "a"], &state), Some(1));
+    }
+
+    #[test]
+    fn auto_connect_ignores_cameras_without_pairing_history() {
+        let state = saved(&["a"], Some("a"));
+        assert_eq!(preferred_paired(["z", "y"], &state), None);
+        assert_eq!(preferred_paired(["z"], &saved(&[], None)), None);
+    }
 }

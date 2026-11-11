@@ -60,7 +60,7 @@ internal fun OsmoLinkApp(
 
     fun onGranted(target: PermissionTarget) {
         when (target) {
-            PermissionTarget.Scan -> viewModel.scan()
+            PermissionTarget.Scan -> viewModel.scan(preferences.autoConnect)
             PermissionTarget.Gps -> viewModel.setGps(true)
         }
     }
@@ -190,7 +190,8 @@ internal fun OsmoLinkApp(
                 }
             }
             if (state.connecting) {
-                state.pairing?.let { pairing ->
+                // Automatic reconnect does not need the camera-side code dialog.
+                state.pairing?.takeIf { it.firstTime || !it.auto }?.let { pairing ->
                     PairingDialog(pairing, onCancel = viewModel::disconnect)
                 }
             }

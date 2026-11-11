@@ -244,7 +244,13 @@ struct RemoteView: View {
             if remote.phase == .scanning {
                 statusCard(title: "正在搜索相机", detail: "通常需要几秒钟，请保持相机唤醒。", showsProgress: true)
             } else if remote.phase == .connecting {
-                statusCard(title: "正在连接相机", detail: "请在相机屏幕上留意配对提示。", showsProgress: true)
+                statusCard(
+                    title: remote.pairing?.auto == true ? "正在自动连接" : "正在连接相机",
+                    detail: remote.pairing?.auto == true
+                        ? "已找到上次连接的相机，正在恢复连接。"
+                        : "请在相机屏幕上留意配对提示。",
+                    showsProgress: true
+                )
             } else if remote.devices.isEmpty {
                 GlassCard {
                     EmptyDevicesView(hasSearched: remote.hasSearched)

@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 class ControllerViewModel : ViewModel() {
     val state: StateFlow<UiState> = OsmoRepository.state
 
-    fun scan() = OsmoRepository.scan()
+    fun scan(autoConnect: Boolean) = OsmoRepository.scan(autoConnect)
 
     fun connect(index: Int) = OsmoRepository.connect(index)
 

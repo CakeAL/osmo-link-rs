@@ -94,6 +94,8 @@ struct Pairing: Decodable, Identifiable {
     let device: String
     let firstTime: Bool
     let code: Int
+    /// True when the bridge reconnected after finding a saved camera on its own.
+    let auto: Bool?
 
     var id: String { device }
 }
@@ -127,11 +129,11 @@ enum BridgeEvent: Decodable {
     case commandDone
     case commandFailed(String)
     case scanFailed(String)
-    case connectFailed(String)
+    case connectFailed(String, Bool)
     case warning(String)
 
     private enum Keys: String, CodingKey {
-        case kind, payload, devices, details, attempt, message, name, parameters
+        case kind, payload, devices, details, attempt, message, name, parameters, auto
     }
 
     init(from decoder: Decoder) throws {
@@ -155,7 +157,11 @@ enum BridgeEvent: Decodable {
         case "commandDone": self = .commandDone
         case "commandFailed": self = .commandFailed(try payload.decode(String.self, forKey: .message))
         case "scanFailed": self = .scanFailed(try payload.decode(String.self, forKey: .message))
-        case "connectFailed": self = .connectFailed(try payload.decode(String.self, forKey: .message))
+        case "connectFailed":
+            self = .connectFailed(
+                try payload.decode(String.self, forKey: .message),
+                try payload.decodeIfPresent(Bool.self, forKey: .auto) ?? false
+            )
         case "warning": self = .warning(try payload.decode(String.self, forKey: .message))
         default:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: event, debugDescription: kind)

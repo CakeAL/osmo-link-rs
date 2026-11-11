@@ -31,9 +31,17 @@ internal class AppPreferences(context: Context) {
     var compatibleBack by mutableStateOf(storage.getBoolean("compatible_back", true))
         private set
 
+    var autoConnect by mutableStateOf(storage.getBoolean("auto_connect", true))
+        private set
+
     fun updateCompatibleBack(enabled: Boolean) {
         storage.edit().putBoolean("compatible_back", enabled).apply()
         compatibleBack = enabled
+    }
+
+    fun updateAutoConnect(enabled: Boolean) {
+        storage.edit().putBoolean("auto_connect", enabled).apply()
+        autoConnect = enabled
     }
 
     fun updateAppearance(value: Appearance) {

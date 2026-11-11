@@ -14,7 +14,7 @@ object OsmoNative {
 
     external fun nativeInit(stateDir: String, listener: BridgeListener): Boolean
 
-    external fun nativeScan(seconds: Int): Boolean
+    external fun nativeScan(seconds: Int, autoConnect: Boolean): Boolean
 
     external fun nativeConnect(index: Int): Boolean
 

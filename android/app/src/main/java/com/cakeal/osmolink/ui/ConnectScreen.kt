@@ -126,10 +126,25 @@ private fun NearbyDevices(state: UiState, onConnect: (Int) -> Unit) {
         }
         when {
             state.scanning || state.connecting -> RemoteCard {
+                val auto = state.connecting && state.pairing?.auto == true
                 ListItem(
-                    headlineContent = { Text(if (state.connecting) "正在连接相机" else "正在搜索相机") },
+                    headlineContent = {
+                        Text(
+                            when {
+                                auto -> "正在自动连接"
+                                state.connecting -> "正在连接相机"
+                                else -> "正在搜索相机"
+                            },
+                        )
+                    },
                     supportingContent = {
-                        Text(if (state.connecting) "请留意相机屏幕上的配对提示。" else "请保持相机唤醒。")
+                        Text(
+                            when {
+                                auto -> "已找到上次连接的相机，正在恢复连接。"
+                                state.connecting -> "请留意相机屏幕上的配对提示。"
+                                else -> "请保持相机唤醒。"
+                            },
+                        )
                     },
                     leadingContent = { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),

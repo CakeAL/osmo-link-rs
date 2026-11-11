@@ -7,7 +7,7 @@
 typedef void (*OsmoEventCallback)(const char *json);
 
 bool osmo_ios_start(const char *state_directory, OsmoEventCallback callback);
-bool osmo_ios_scan(void);
+bool osmo_ios_scan(bool auto_connect);
 bool osmo_ios_connect(uint32_t index);
 bool osmo_ios_disconnect(void);
 bool osmo_ios_capture(uint8_t mode, bool capturing);

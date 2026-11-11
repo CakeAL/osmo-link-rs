@@ -27,7 +27,7 @@ cargo run -p macos-cli -- --connect OsmoAction4-B15B
 cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
 
 cargo fmt --all                        # 格式化（无 rustfmt.toml，用默认规则）
-cargo test --workspace                 # 18 个单元测试，全部离线
+cargo test --workspace                 # 26 个单元测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
 cargo check -p android-bridge --target aarch64-linux-android

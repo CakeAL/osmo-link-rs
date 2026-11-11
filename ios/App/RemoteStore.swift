@@ -46,6 +46,11 @@ final class RemoteStore: ObservableObject {
             updateActivity()
         }
     }
+    @Published var autoConnectEnabled = UserDefaults.standard.object(forKey: "autoConnectPaired") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(autoConnectEnabled, forKey: "autoConnectPaired")
+        }
+    }
 
     let location = LocationInjector()
 
@@ -85,7 +90,7 @@ final class RemoteStore: ObservableObject {
 
     func search() {
         guard phase == .idle, startBridge() else { return }
-        guard osmo_ios_scan() else {
+        guard osmo_ios_scan(autoConnectEnabled) else {
             message = "暂时无法开始搜索，请重试。"
             return
         }
@@ -158,6 +163,11 @@ final class RemoteStore: ObservableObject {
             phase = .idle
         case let .pairing(info):
             pairing = info
+            // The bridge connects automatically right after a scan finds a
+            // saved camera, without a matching tap in the UI.
+            if phase == .idle || phase == .scanning {
+                phase = .connecting
+            }
         case let .connected(camera):
             self.camera = camera
             pairing = nil
@@ -205,10 +215,14 @@ final class RemoteStore: ObservableObject {
         case let .commandFailed(error):
             pending = false
             message = error
-        case let .scanFailed(error), let .connectFailed(error):
+        case let .scanFailed(error):
             phase = .idle
             pairing = nil
             message = error
+        case let .connectFailed(error, auto):
+            phase = .idle
+            pairing = nil
+            message = auto ? "自动连接失败：\(error)" : error
         case let .warning(warning):
             logger.warning("\(warning, privacy: .public)")
             if phase == .connected || phase == .disconnecting { message = warning }

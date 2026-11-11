@@ -149,6 +149,29 @@ internal fun SettingsScreen(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
         }
+        SettingsGroup("连接") {
+            ListItem(
+                headlineContent = { Text("自动连接已配对相机") },
+                supportingContent = {
+                    Text(
+                        if (preferences.autoConnect) {
+                            "搜索时发现之前连接过的相机后直接连接上次使用的那台"
+                        } else {
+                            "搜索结果只列出附近相机，由你手动选择"
+                        },
+                    )
+                },
+                trailingContent = {
+                    Switch(checked = preferences.autoConnect, onCheckedChange = null)
+                },
+                modifier = Modifier.toggleable(
+                    value = preferences.autoConnect,
+                    role = Role.Switch,
+                    onValueChange = preferences::updateAutoConnect,
+                ),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
         SettingsGroup {
             SettingsRow("关于 Osmo Link", "版本 ${BuildConfig.VERSION_NAME}", onClick = onAbout)
         }

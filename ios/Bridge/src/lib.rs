@@ -23,7 +23,7 @@ static REQUESTS: OnceLock<Option<mpsc::Sender<Request>>> = OnceLock::new();
 static CAMERA: Mutex<Option<Weak<Camera>>> = Mutex::new(None);
 
 enum Request {
-    Scan,
+    Scan { auto_connect: bool },
     Connect(u32),
     Disconnect,
     Capture { mode: u8, capturing: bool },
@@ -68,9 +68,11 @@ fn send(request: Request) -> bool {
         .is_some_and(|sender| sender.try_send(request).is_ok())
 }
 
+/// Scans for DJI cameras. When `auto_connect` is set, a previously paired
+/// camera found in the scan is connected without waiting for a selection.
 #[unsafe(no_mangle)]
-pub extern "C" fn osmo_ios_scan() -> bool {
-    send(Request::Scan)
+pub extern "C" fn osmo_ios_scan(auto_connect: bool) -> bool {
+    send(Request::Scan { auto_connect })
 }
 
 #[unsafe(no_mangle)]
@@ -145,6 +147,32 @@ struct Controller {
     identity: ControllerIdentity,
     #[serde(default)]
     paired: Vec<String>,
+    /// Most recently connected camera, preferred when several saved cameras
+    /// are in range at the same time.
+    #[serde(default)]
+    last: Option<String>,
+}
+
+/// Index into the RSSI-sorted scan list of the camera to reconnect to.
+///
+/// The last connected camera wins when it is in range; otherwise the strongest
+/// previously paired camera is used, matching the scan result order.
+fn preferred_paired<'a, I>(ids: I, controller: &Controller) -> Option<usize>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let ids: Vec<&str> = ids.into_iter().collect();
+    if let Some(last) = controller.last.as_deref()
+        && let Some(index) = ids.iter().position(|id| *id == last)
+    {
+        return Some(index);
+    }
+    ids.iter().position(|id| {
+        controller
+            .paired
+            .iter()
+            .any(|paired| paired.as_str() == *id)
+    })
 }
 
 impl Controller {
@@ -175,7 +203,7 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
     let mut scanner = None;
     while let Some(request) = requests.recv().await {
         match request {
-            Request::Scan => {
+            Request::Scan { auto_connect } => {
                 devices.clear();
                 let result = async {
                     let scanner = match &scanner {
@@ -195,23 +223,26 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
                             .collect();
                         devices = found;
                         emit(callback, "devices", json!({ "devices": list }));
+                        if auto_connect {
+                            reconnect_saved(&directory, &devices, callback, &mut requests).await;
+                        }
                     }
                     Err(error) => report(callback, "scanFailed", error),
                 }
             }
             Request::Connect(index) => {
-                if let Some(device) = devices.get(index as usize) {
-                    match connect(&directory, device, callback).await {
+                if let Some(device) = devices.get(index as usize).cloned() {
+                    match connect(&directory, &device, callback, false).await {
                         Ok(camera) => {
                             session(Arc::new(camera), callback, &mut requests).await;
                             if let Ok(mut slot) = CAMERA.lock() {
                                 *slot = None;
                             }
                         }
-                        Err(error) => report(callback, "connectFailed", error),
+                        Err(error) => report_connect_failed(callback, false, error),
                     }
                 } else {
-                    report(callback, "connectFailed", "请重新搜索相机。");
+                    report_connect_failed(callback, false, "请重新搜索相机。");
                 }
             }
             Request::Disconnect => emit(callback, "disconnected", json!({})),
@@ -222,10 +253,53 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
     }
 }
 
+/// Connects to a previously paired camera found in the latest scan.
+///
+/// Runs the normal session after a successful connection, so the request loop
+/// stays blocked exactly as it does for a manual selection.
+async fn reconnect_saved(
+    directory: &Path,
+    devices: &[Device],
+    callback: Callback,
+    requests: &mut mpsc::Receiver<Request>,
+) {
+    let controller = match Controller::load(directory) {
+        Ok(controller) => controller,
+        Err(error) => {
+            report(callback, "warning", error);
+            return;
+        }
+    };
+    let Some(index) =
+        preferred_paired(devices.iter().map(|device| device.id.as_str()), &controller)
+    else {
+        return;
+    };
+    let device = devices[index].clone();
+    match connect(directory, &device, callback, true).await {
+        Ok(camera) => {
+            session(Arc::new(camera), callback, requests).await;
+            if let Ok(mut slot) = CAMERA.lock() {
+                *slot = None;
+            }
+        }
+        Err(error) => report_connect_failed(callback, true, error),
+    }
+}
+
+fn report_connect_failed(callback: Callback, auto: bool, error: impl std::fmt::Display) {
+    emit(
+        callback,
+        "connectFailed",
+        json!({ "message": error.to_string(), "auto": auto }),
+    );
+}
+
 async fn connect(
     directory: &Path,
     device: &Device,
     callback: Callback,
+    auto: bool,
 ) -> Result<Camera, Box<dyn std::error::Error + Send + Sync>> {
     let mut controller = Controller::load(directory)?;
     let first_time = !controller.paired.contains(&device.id);
@@ -239,14 +313,20 @@ async fn connect(
     emit(
         callback,
         "pairing",
-        json!({ "device": device.name, "firstTime": first_time, "code": options.verification_code }),
+        json!({
+            "device": device.name,
+            "firstTime": first_time,
+            "code": options.verification_code,
+            "auto": auto,
+        }),
     );
     let camera = Camera::connect(device, options).await?;
     if first_time {
         controller.paired.push(device.id.clone());
-        if let Err(error) = controller.save(directory) {
-            report(callback, "warning", error);
-        }
+    }
+    controller.last = Some(device.id.clone());
+    if let Err(error) = controller.save(directory) {
+        report(callback, "warning", error);
     }
     emit(
         callback,
@@ -300,7 +380,7 @@ async fn session(camera: Arc<Camera>, callback: Callback, requests: &mut mpsc::R
                         }
                         return;
                     }
-                    Some(Request::Scan | Request::Connect(_)) => continue,
+                    Some(Request::Scan { .. } | Request::Connect(_)) => continue,
                 };
                 match result {
                     Ok(()) => emit(callback, "commandDone", json!({})),
@@ -375,4 +455,36 @@ async fn set_mode(camera: &Camera, code: u8) -> osmo_core::Result<()> {
         return Err(Error::InvalidInput("stop capturing before changing mode"));
     }
     camera.set_mode(mode).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn controller(paired: &[&str], last: Option<&str>) -> Controller {
+        Controller {
+            identity: ControllerIdentity::default(),
+            paired: paired.iter().map(|id| (*id).to_owned()).collect(),
+            last: last.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn auto_connect_prefers_the_last_camera_when_it_is_in_range() {
+        let saved = controller(&["a", "b"], Some("b"));
+        assert_eq!(preferred_paired(["a", "b"], &saved), Some(1));
+    }
+
+    #[test]
+    fn auto_connect_falls_back_to_the_strongest_paired_camera() {
+        let saved = controller(&["a", "b"], Some("c"));
+        assert_eq!(preferred_paired(["z", "b", "a"], &saved), Some(1));
+    }
+
+    #[test]
+    fn auto_connect_ignores_cameras_without_pairing_history() {
+        let saved = controller(&["a"], Some("a"));
+        assert_eq!(preferred_paired(["z", "y"], &saved), None);
+        assert_eq!(preferred_paired(["z"], &controller(&[], None)), None);
+    }
 }

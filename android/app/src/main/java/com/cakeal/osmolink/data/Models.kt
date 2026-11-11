@@ -15,6 +15,8 @@ data class PairingInfo(
     val code: Int,
     val device: String,
     val firstTime: Boolean,
+    /** True when the bridge reconnected after finding a saved camera on its own. */
+    val auto: Boolean,
 )
 
 /** Subset of `osmo_core::CameraStatus` the UI renders. */

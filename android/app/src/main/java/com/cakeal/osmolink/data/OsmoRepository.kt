@@ -45,11 +45,11 @@ object OsmoRepository : BridgeListener {
         }
     }
 
-    fun scan() {
+    fun scan(autoConnect: Boolean) {
         val current = _state.value
         if (current.scanning || current.connected || current.connecting) return
         update { it.copy(scanning = true, hasSearched = true, devices = emptyList(), message = null) }
-        if (!OsmoNative.nativeScan(12)) {
+        if (!OsmoNative.nativeScan(12, autoConnect)) {
             update { it.copy(scanning = false, message = "无法开始扫描，请检查蓝牙与权限") }
         }
     }
@@ -237,6 +237,7 @@ object OsmoRepository : BridgeListener {
                         code = json.optInt("code"),
                         device = json.optString("device"),
                         firstTime = json.optBoolean("firstTime"),
+                        auto = json.optBoolean("auto"),
                     ),
                 )
             }
@@ -254,10 +255,15 @@ object OsmoRepository : BridgeListener {
                 )
             }
             "connectFailed" -> update {
+                val detail = json.optString("message")
                 it.copy(
                     connecting = false,
                     pairing = null,
-                    message = "连接失败：${json.optString("message")}",
+                    message = if (json.optBoolean("auto")) {
+                        "自动连接失败：$detail"
+                    } else {
+                        "连接失败：$detail"
+                    },
                 )
             }
             "status" -> {

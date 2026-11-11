@@ -214,7 +214,9 @@ Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
 也可用 `ANDROID_NDK_HOME` 指定。
 
 首次运行授予「附近设备/位置」权限，唤醒相机并开启无线连接后搜索；
-Android 首次配对需在相机屏幕确认配对码 `2333`。控制页底部的圆形按钮按当前模式执行拍照或启停录像。
+Android 首次配对需在相机屏幕确认配对码 `2333`。之后搜索时如果发现已配对过的相机，
+应用会自动连接上次使用的那台，不再需要手动点选；可在设置页关闭「自动连接已配对相机」，
+回到手动选择。控制页底部的圆形按钮按当前模式执行拍照或启停录像。
 控制页将相机状态、拍摄模式、相机详情和定位注入分卡显示。定位取得首个有效样本后会显示频率、精度和参与定位的卫星数。
 在当前模式一栏上下滑动可展开滚轮，松手切换到中央高亮的模式。也可点开滚轮后选择。
 连接后，在精确位置权限和系统定位可用时默认开启定位注入。定位按 100ms 目标间隔发送，
@@ -233,8 +235,9 @@ JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android` 检
 
 原生 SwiftUI 应用位于 [ios](ios)，最低支持 iOS 16.0。iOS 26 起系统导航和拍摄按钮使用
 Liquid Glass，旧系统使用原生控件和系统材质。首次搜索时授权蓝牙，选择相机后在相机端
-确认配对码 `2333`。配对身份保存在应用沙盒中。相机状态决定主按钮是拍照、开始录像还是
-停止录像。设置页提供外观选项、实时活动开关和系统权限入口。
+确认配对码 `2333`。配对身份保存在应用沙盒中。再次搜索时，如果上次连接的相机在附近，
+应用会自动恢复连接；设置页可关闭「自动连接已配对相机」，改为手动选择。相机状态决定
+主按钮是拍照、开始录像还是停止录像。设置页提供外观选项、实时活动开关和系统权限入口。
 在当前模式一栏上下滑动可展开带图标的滚轮，松手切换到中央高亮的模式。也可点开滚轮后选择。
 
 iOS 16.1 起，应用前台收到录像状态后可启动实时活动，显示拍摄模式、时长与电量。
@@ -257,6 +260,20 @@ open ios/OsmoLink.xcodeproj
 
 # 在 Apple Silicon 上构建 iOS 模拟器版本
 rustup target add aarch64-apple-ios-sim
+```
+
+未签名 arm64 真机包可以用下面的命令生成。它不能直接安装到普通 iPhone，需要使用
+TrollStore，或经 Sideloadly / AltStore 等工具重新签名；正常签名需要在 Xcode 中为
+`OsmoLink` 与 `RecordingWidget` 选择同一个开发团队。
+
+```sh
+xcodebuild -project ios/OsmoLink.xcodeproj -scheme OsmoLink -configuration Release \
+  -sdk iphoneos -derivedDataPath ios/build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+mkdir -p ios/build/Payload
+ditto ios/build/DerivedData/Build/Products/Release-iphoneos/OsmoLink.app \
+  ios/build/Payload/OsmoLink.app
+(cd ios/build && zip -qry OsmoLink-unsigned.ipa Payload)
 ```
 
 Intel 模拟器构建使用 `x86_64-apple-ios` target。蓝牙配对、拍摄及灵动岛实机表现待验证。
