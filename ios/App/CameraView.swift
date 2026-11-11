@@ -83,7 +83,7 @@ struct CameraView: View {
                             .accessibilityLabel(status.photoMode ? status.modeTitle : "录制时长 \(status.recordSeconds) 秒")
 
                         HStack(spacing: 7) {
-                            heroChip(status.resolution)
+                            if !status.resolution.isEmpty { heroChip(status.resolution) }
                             heroChip(status.fps)
                             heroChip(remaining(status))
                         }

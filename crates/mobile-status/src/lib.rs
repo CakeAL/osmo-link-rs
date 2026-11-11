@@ -3,7 +3,7 @@
 //! Labels stay in English and generic; localization belongs to the app layer.
 use osmo_core::{
     ActionPhotoSize, CameraMode, CameraModel, CameraStatus, CaptureFormat, CaptureRate, EisMode,
-    Osmo360PhotoSize, VideoResolution,
+    Osmo360PhotoSize, PhotoRatio, VideoResolution,
 };
 use serde_json::{Value, json};
 
@@ -41,9 +41,10 @@ pub fn selectable_modes(model: CameraModel) -> impl Iterator<Item = CameraMode> 
         CameraModel::Osmo360 => OSMO_360,
         CameraModel::Unknown(_) => &[],
     };
-    modes.iter().copied().filter(move |mode| {
-        model != CameraModel::Action4 || !matches!(mode, SuperNight | SubjectTracking)
-    })
+    modes
+        .iter()
+        .copied()
+        .filter(move |mode| model != CameraModel::Action4 || *mode != SubjectTracking)
 }
 
 pub fn mode_catalog(model: CameraModel) -> Vec<Value> {
@@ -60,7 +61,7 @@ pub fn status_json(status: &CameraStatus) -> Value {
         "stateCode": status.state.code(),
         "stateName": format!("{:?}", status.state),
         "capturing": status.is_capturing(),
-        "resolution": resolution_label(status.resolution),
+        "resolution": resolution_label(status.resolution, status.mode, status.photo_ratio),
         "fps": rate_label(status.fps),
         "eis": eis_label(status.eis),
         "recordSeconds": status.record_seconds,
@@ -77,7 +78,12 @@ pub fn status_json(status: &CameraStatus) -> Value {
     })
 }
 
-fn resolution_label(format: CaptureFormat) -> String {
+fn resolution_label(format: CaptureFormat, mode: CameraMode, ratio: PhotoRatio) -> String {
+    let photo_ratio = || match ratio {
+        PhotoRatio::Ratio4x3 => "4:3".into(),
+        PhotoRatio::Ratio16x9 => "16:9".into(),
+        PhotoRatio::Unknown(_) => String::new(),
+    };
     match format {
         CaptureFormat::Video(resolution) => match resolution {
             VideoResolution::P1080 => "1080P".into(),
@@ -93,14 +99,15 @@ fn resolution_label(format: CaptureFormat) -> String {
         CaptureFormat::ActionPhoto(size) => match size {
             ActionPhotoSize::Medium => "Medium".into(),
             ActionPhotoSize::Large => "Large".into(),
-            ActionPhotoSize::Unknown(code) => format!("0x{code:02X}"),
+            ActionPhotoSize::Unknown(_) => photo_ratio(),
         },
         CaptureFormat::Osmo360Photo(size) => match size {
             Osmo360PhotoSize::Standard12Mp => "12MP".into(),
             Osmo360PhotoSize::Wide20Mp => "20MP".into(),
             Osmo360PhotoSize::UltraWide30Mp => "30MP".into(),
-            Osmo360PhotoSize::Unknown(code) => format!("0x{code:02X}"),
+            Osmo360PhotoSize::Unknown(_) => photo_ratio(),
         },
+        CaptureFormat::Unknown(_) if mode.uses_photo_parameters() => photo_ratio(),
         CaptureFormat::Unknown(code) => format!("0x{code:02X}"),
     }
 }
@@ -140,6 +147,7 @@ mod tests {
         let osmo360: Vec<_> = selectable_modes(CameraModel::Osmo360).collect();
         assert_eq!(action5, action6);
         assert!(action4.contains(&CameraMode::SlowMotion));
+        assert!(action4.contains(&CameraMode::SuperNight));
         assert!(!action4.contains(&CameraMode::SubjectTracking));
         assert!(action5.contains(&CameraMode::SubjectTracking));
         assert!(!action5.contains(&CameraMode::PanoramicVideo));
@@ -151,5 +159,34 @@ mod tests {
             json!({ "code": CameraMode::PanoramicVideo.code(), "name": "PanoramicVideo" })
         );
         assert!(mode_catalog(CameraModel::Unknown(0)).is_empty());
+    }
+
+    #[test]
+    fn unknown_photo_size_uses_the_reported_aspect_ratio() {
+        let photo = CameraMode::Photo;
+        let format = CaptureFormat::from_code(photo, CameraModel::Action4, 0x10);
+        assert_eq!(format.code(), 0x10);
+        assert_eq!(resolution_label(format, photo, PhotoRatio::Ratio4x3), "4:3");
+        assert_eq!(
+            resolution_label(format, photo, PhotoRatio::Ratio16x9),
+            "16:9"
+        );
+        assert_eq!(
+            resolution_label(format, photo, PhotoRatio::Unknown(0xff)),
+            ""
+        );
+
+        let large = CaptureFormat::ActionPhoto(ActionPhotoSize::Large);
+        assert_eq!(
+            resolution_label(large, photo, PhotoRatio::Ratio4x3),
+            "Large"
+        );
+
+        let video = CameraMode::Video;
+        let format = CaptureFormat::from_code(video, CameraModel::Action4, 0x10);
+        assert_eq!(
+            resolution_label(format, video, PhotoRatio::Ratio4x3),
+            "4K 16:9"
+        );
     }
 }

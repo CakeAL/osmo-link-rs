@@ -448,3 +448,12 @@ luminance to preserve contrast.
 Verified discovery and camera layouts on the API 37 emulator, including the
 dark wallpaper palette and a custom light accent with a simulated camera.
 Android Debug, R8 release, and unit tests passed.
+
+## Mobile: restore SuperNight and label unknown photo sizes
+
+Restored the documented SuperNight mode to the Action 4 catalog. Unknown
+photo-size codes now fall back to the reported aspect ratio on mobile. If the
+ratio is unknown, the size chip is omitted. The original byte remains intact
+in the core, and video format labels are unchanged. Rust formatting, workspace
+tests, and strict Clippy passed. The Action 4 firmware behavior still needs
+hardware verification.
