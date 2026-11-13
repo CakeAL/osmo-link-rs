@@ -23,12 +23,7 @@ fn run() -> Result<()> {
         },
     )?;
     let raw_count = extraction.points.len();
-    let points = resample(
-        &extraction.points,
-        extraction.frame_rate,
-        args.frequency,
-        args.method,
-    )?;
+    let points = resample(&extraction.points, args.frequency, args.method)?;
 
     let name = args
         .input
@@ -49,7 +44,7 @@ fn run() -> Result<()> {
         println!("帧率: {frame_rate:.2} Hz");
     }
     println!(
-        "GPS: {} 个原始点 -> {} 个输出点（{}）",
+        "GPS: {} 个原始样本 -> {} 个输出点（{}）",
         raw_count,
         points.len(),
         args.method
@@ -83,7 +78,7 @@ fn parse_args() -> Result<Option<Args>> {
     let mut positional_output: Option<PathBuf> = None;
     let mut output_option: Option<PathBuf> = None;
     let mut frequency = 2.0;
-    let mut method = ResampleMethod::Linear;
+    let mut method = ResampleMethod::None;
     let mut timezone_offset = 0.0;
     let mut positional_only = false;
 
@@ -210,8 +205,8 @@ osmo_gps_extract_gpx - 从 DJI Osmo Action 4/5/6 的 MP4 提取 GPS 并写 GPX
 
 选项:
   -o, --output <path>          输出 GPX 路径（默认与输入同名的 .gpx）
-  -f, --frequency <Hz>         输出频率，默认 2 Hz
-  -r, --resample <method>      none | discard | linear（默认 linear）
+  -f, --frequency <Hz>         discard / linear 的输出频率，默认 2 Hz
+  -r, --resample <method>      none | discard | linear（默认 none）
   -t, --timezone-offset <h>    从嵌入时间中减去的小时数，默认 0
   -h, --help                   显示帮助
   -V, --version                显示版本
@@ -222,6 +217,10 @@ osmo_gps_extract_gpx - 从 DJI Osmo Action 4/5/6 的 MP4 提取 GPS 并写 GPX
   stts 时间轴。嵌入的 GPS 日期时间只用来确定轨迹的绝对时刻，因此个别
   写坏的时间戳不会中断导出。嵌入时间按 UTC 原样解释；
   `--timezone-offset 8` 会再减 8 小时。
+  相机对每一帧都写一条 gps_info，没有新定位时重复上一条，所以相邻的
+  相同定位会被合并成一个点：默认输出即每个真实定位（手机 GNSS 通常
+  1 Hz），不会出现重复坐标。需要更高频率时用 `-r linear -f 2` 插值，
+  或用 `-r discard -f 1` 按时间抽样。
 "
     );
 }

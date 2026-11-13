@@ -1,16 +1,16 @@
-use time::Duration;
+use time::{Duration, OffsetDateTime};
 
 use crate::GpsPoint;
 use crate::error::{Error, Result};
 
 const MAX_OUTPUT_POINTS: usize = 10_000_000;
 
-/// How raw GPS samples are reduced before writing GPX.
+/// How decoded GPS samples are reduced before writing GPX.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResampleMethod {
-    /// Keep every decoded sample.
+    /// Keep every distinct fix.
     None,
-    /// Keep one sample every `input_frequency / output_frequency` samples.
+    /// Keep the fix closest to every `1 / output_frequency` seconds.
     Discard,
     /// Interpolate at a fixed output interval.
     Linear,
@@ -42,68 +42,94 @@ impl std::fmt::Display for ResampleMethod {
 }
 
 /// Resample raw GPS points.
+///
+/// DJI writes one `gps_info` entry per video frame and repeats the last fix
+/// while no new one arrives, so a fix that updates once per second occupies
+/// roughly thirty consecutive samples. Those repeats carry no new position:
+/// they are collapsed before resampling, and the output never repeats the
+/// previous position back to back.
 pub fn resample(
     points: &[GpsPoint],
-    input_frequency: Option<f64>,
     output_frequency: f64,
     method: ResampleMethod,
 ) -> Result<Vec<GpsPoint>> {
-    if method == ResampleMethod::None {
-        return Ok(points.to_vec());
-    }
-    if !output_frequency.is_finite() || output_frequency <= 0.0 {
+    if method != ResampleMethod::None && (!output_frequency.is_finite() || output_frequency <= 0.0)
+    {
         return Err(Error::Argument(
             "output frequency must be a positive finite number".to_owned(),
         ));
-    }
-    if points.len() < 2 {
-        return Ok(points.to_vec());
     }
     if points.windows(2).any(|pair| pair[1].time < pair[0].time) {
         return Err(Error::UnsortedTimestamps);
     }
 
+    let fixes = coalesce(points);
+    if method == ResampleMethod::None || fixes.len() < 2 {
+        return Ok(fixes);
+    }
+
     if method == ResampleMethod::Discard {
-        discard(points, input_frequency, output_frequency)
+        discard(&fixes, output_frequency)
     } else {
-        linear(points, output_frequency)
+        linear(&fixes, output_frequency)
     }
 }
 
-fn discard(
-    points: &[GpsPoint],
-    input_frequency: Option<f64>,
-    output_frequency: f64,
-) -> Result<Vec<GpsPoint>> {
-    let input_frequency = input_frequency.ok_or(Error::MissingFrameRate)?;
-    if !input_frequency.is_finite() || input_frequency <= 0.0 {
-        return Err(Error::MissingFrameRate);
+/// Collapse samples that only repeat the previous fix.
+fn coalesce(points: &[GpsPoint]) -> Vec<GpsPoint> {
+    let mut fixes: Vec<GpsPoint> = Vec::new();
+    for point in points {
+        push_fix(&mut fixes, point.clone());
     }
-    if output_frequency > input_frequency {
-        return Err(Error::Argument(
-            "discard output frequency cannot exceed the input frame rate".to_owned(),
-        ));
+    fixes
+}
+
+fn same_position(left: &GpsPoint, right: &GpsPoint) -> bool {
+    left.latitude == right.latitude
+        && left.longitude == right.longitude
+        && left.altitude_m == right.altitude_m
+}
+
+/// Push a point unless it repeats the position of the previous one.
+fn push_fix(output: &mut Vec<GpsPoint>, point: GpsPoint) {
+    if !output
+        .last()
+        .is_some_and(|last| same_position(last, &point))
+    {
+        output.push(point);
+    }
+}
+
+fn discard(points: &[GpsPoint], output_frequency: f64) -> Result<Vec<GpsPoint>> {
+    let start = points[0].time;
+    let count = grid_count(points, output_frequency)?;
+    let mut output = Vec::with_capacity(count.min(points.len()));
+    let mut cursor = 0usize;
+
+    for index in 0..count {
+        let time = grid_time(start, index, output_frequency);
+        while cursor + 1 < points.len()
+            && distance_nanos(points[cursor + 1].time, time)
+                < distance_nanos(points[cursor].time, time)
+        {
+            cursor += 1;
+        }
+        push_fix(&mut output, points[cursor].clone());
     }
 
-    let step = (input_frequency / output_frequency).round().max(1.0) as usize;
-    Ok(points.iter().step_by(step).cloned().collect())
+    Ok(output)
 }
 
 fn linear(points: &[GpsPoint], output_frequency: f64) -> Result<Vec<GpsPoint>> {
     let start = points[0].time;
     let end = points[points.len() - 1].time;
-    let total_seconds = (end - start).as_seconds_f64();
-    let count = ((total_seconds * output_frequency).floor() as usize).saturating_add(1);
-    if count > MAX_OUTPUT_POINTS {
-        return Err(Error::TooManyOutputPoints(count));
-    }
+    let count = grid_count(points, output_frequency)?;
 
     let mut output = Vec::with_capacity(count);
     let mut cursor = 0usize;
 
     for index in 0..count {
-        let offset_ms = (index as f64 / output_frequency * 1000.0).round() as i64;
-        let time = start + Duration::milliseconds(offset_ms);
+        let time = grid_time(start, index, output_frequency);
         if time > end {
             break;
         }
@@ -113,11 +139,11 @@ fn linear(points: &[GpsPoint], output_frequency: f64) -> Result<Vec<GpsPoint>> {
         }
 
         if points[cursor].time == time {
-            output.push(points[cursor].clone());
+            push_fix(&mut output, points[cursor].clone());
             continue;
         }
         let Some(right) = points.get(cursor + 1) else {
-            output.push(points[cursor].clone());
+            push_fix(&mut output, points[cursor].clone());
             continue;
         };
 
@@ -129,18 +155,39 @@ fn linear(points: &[GpsPoint], output_frequency: f64) -> Result<Vec<GpsPoint>> {
             (time - left.time).whole_milliseconds() as f64 / span_ms as f64
         };
 
-        output.push(GpsPoint {
-            time,
-            latitude: lerp(left.latitude, right.latitude, fraction),
-            longitude: lerp(left.longitude, right.longitude, fraction),
-            altitude_m: lerp(left.altitude_m, right.altitude_m, fraction),
-            accelerometer1: lerp_vec3(left.accelerometer1, right.accelerometer1, fraction),
-            accelerometer2: lerp_vec3(left.accelerometer2, right.accelerometer2, fraction),
-            derivatives: lerp_vec3(left.derivatives, right.derivatives, fraction),
-        });
+        push_fix(
+            &mut output,
+            GpsPoint {
+                time,
+                latitude: lerp(left.latitude, right.latitude, fraction),
+                longitude: lerp(left.longitude, right.longitude, fraction),
+                altitude_m: lerp(left.altitude_m, right.altitude_m, fraction),
+                accelerometer1: lerp_vec3(left.accelerometer1, right.accelerometer1, fraction),
+                accelerometer2: lerp_vec3(left.accelerometer2, right.accelerometer2, fraction),
+                derivatives: lerp_vec3(left.derivatives, right.derivatives, fraction),
+            },
+        );
     }
 
     Ok(output)
+}
+
+fn grid_count(points: &[GpsPoint], output_frequency: f64) -> Result<usize> {
+    let total_seconds = (points[points.len() - 1].time - points[0].time).as_seconds_f64();
+    let count = ((total_seconds * output_frequency).floor() as usize).saturating_add(1);
+    if count > MAX_OUTPUT_POINTS {
+        return Err(Error::TooManyOutputPoints(count));
+    }
+    Ok(count)
+}
+
+fn grid_time(start: OffsetDateTime, index: usize, output_frequency: f64) -> OffsetDateTime {
+    let offset_ms = (index as f64 / output_frequency * 1000.0).round() as i64;
+    start + Duration::milliseconds(offset_ms)
+}
+
+fn distance_nanos(left: OffsetDateTime, right: OffsetDateTime) -> i128 {
+    (left - right).whole_nanoseconds().abs()
 }
 
 fn lerp(left: f64, right: f64, fraction: f64) -> f64 {
@@ -177,10 +224,17 @@ mod tests {
         }
     }
 
+    fn at(milliseconds: i64, latitude: f64) -> GpsPoint {
+        GpsPoint {
+            time: datetime!(2026-01-01 00:00:00 UTC) + Duration::milliseconds(milliseconds),
+            ..point(0, latitude)
+        }
+    }
+
     #[test]
     fn linear_interpolates_half_seconds() {
         let points = vec![point(0, 0.0), point(1, 1.0), point(2, 2.0)];
-        let output = resample(&points, Some(1.0), 2.0, ResampleMethod::Linear).expect("resample");
+        let output = resample(&points, 2.0, ResampleMethod::Linear).expect("resample");
 
         assert_eq!(output.len(), 5);
         let latitudes: Vec<f64> = output.iter().map(|point| point.latitude).collect();
@@ -191,29 +245,74 @@ mod tests {
     }
 
     #[test]
-    fn discard_uses_frame_rate() {
-        let points: Vec<GpsPoint> = (0..10).map(|index| point(index, index as f64)).collect();
-        let output = resample(&points, Some(30.0), 10.0, ResampleMethod::Discard).expect("discard");
+    fn collapses_a_fix_repeated_over_consecutive_frames() {
+        // 30 fps file: one fix per second occupies ~30 identical samples.
+        let points = vec![
+            at(0, 0.0),
+            at(33, 0.0),
+            at(66, 0.0),
+            at(1000, 1.0),
+            at(1033, 1.0),
+        ];
+        let output = resample(&points, 2.0, ResampleMethod::None).expect("none");
 
-        assert_eq!(output.len(), 4);
-        assert_eq!(output[0].latitude, 0.0);
-        assert_eq!(output[1].latitude, 3.0);
-        assert_eq!(output[2].latitude, 6.0);
-        assert_eq!(output[3].latitude, 9.0);
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0].time, datetime!(2026-01-01 00:00:00 UTC));
+        assert_eq!(output[1].time, datetime!(2026-01-01 00:00:01 UTC));
     }
 
     #[test]
-    fn none_keeps_every_point() {
+    fn linear_interpolates_between_fixes_instead_of_repeating_one() {
+        // A held from 0ms to 200ms, then B from 400ms: at 5 Hz the midpoint
+        // must interpolate between A and B rather than emit A twice.
+        let points = vec![
+            at(0, 0.0),
+            at(100, 0.0),
+            at(200, 0.0),
+            at(400, 1.0),
+            at(500, 1.0),
+        ];
+        let output = resample(&points, 5.0, ResampleMethod::Linear).expect("linear");
+
+        let latitudes: Vec<f64> = output.iter().map(|point| point.latitude).collect();
+        assert_eq!(latitudes, vec![0.0, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn discard_picks_the_fix_closest_to_each_interval() {
+        let points = vec![at(0, 0.0), at(900, 1.0), at(1400, 2.0), at(2000, 3.0)];
+        let output = resample(&points, 1.0, ResampleMethod::Discard).expect("discard");
+
+        let times: Vec<OffsetDateTime> = output.iter().map(|point| point.time).collect();
+        assert_eq!(
+            times,
+            vec![
+                datetime!(2026-01-01 00:00:00 UTC),
+                datetime!(2026-01-01 00:00:00.900 UTC),
+                datetime!(2026-01-01 00:00:02 UTC),
+            ]
+        );
+        assert_eq!(output[1].latitude, 1.0);
+    }
+
+    #[test]
+    fn discard_never_repeats_the_same_fix() {
+        let points = vec![at(0, 0.0), at(1000, 1.0), at(2000, 2.0)];
+        let output = resample(&points, 5.0, ResampleMethod::Discard).expect("discard");
+        assert_eq!(output.len(), 3);
+    }
+
+    #[test]
+    fn none_keeps_every_distinct_fix() {
         let points = vec![point(0, 0.0), point(1, 1.0)];
-        let output = resample(&points, None, 2.0, ResampleMethod::None).expect("none");
+        let output = resample(&points, 2.0, ResampleMethod::None).expect("none");
         assert_eq!(output, points);
     }
 
     #[test]
     fn rejects_unsorted_points() {
         let points = vec![point(1, 0.0), point(0, 1.0)];
-        let error =
-            resample(&points, Some(1.0), 2.0, ResampleMethod::Linear).expect_err("unsorted");
+        let error = resample(&points, 2.0, ResampleMethod::Linear).expect_err("unsorted");
         assert!(matches!(error, Error::UnsortedTimestamps));
     }
 }

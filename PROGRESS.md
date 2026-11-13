@@ -549,3 +549,29 @@ one corrupt timestamp end to end, and a signed altitude varint. Re-verified with
 `DJI_20261105120251_0002_D.MP4` (Action 6, 17 GB): 66,270 raw points, 5,130
 samples without a fix, first point `2026-11-05T02:06:01.742Z`, last
 `2026-11-05T02:42:52.742Z`, default 2 Hz linear output has 4,423 points.
+
+## Video GPS: collapse per-frame GPS repeats
+
+DJI writes one `gps_info` entry per video frame and repeats the last fix while no
+new one arrives. The app sends the latest phone fix every 100 ms (10 Hz), but
+phone GNSS updates at about 1 Hz, so one fix occupies roughly 30 consecutive
+samples of the 29.97 fps metadata track. Interpolating inside such a constant
+block with the default 2 Hz linear output therefore produced two identical
+points per fix, and `-r none` emitted all 66,270 repeated samples.
+
+Consecutive samples with identical latitude, longitude and altitude are now one
+fix, keeping the time of its first frame. The CLI default also changed from
+2 Hz linear to `none`, so the default GPX carries one point per actual fix
+instead of an interpolated point every 500 ms. `linear` now interpolates between
+fixes and no longer repeats a position, and `discard` picks the fix closest to
+each output interval instead of stepping by frame count, so its rate never
+exceeds the real fix rate. Resampling no longer needs the video frame rate:
+`resample` lost its `input_frequency` parameter and `Error::MissingFrameRate`
+was removed.
+
+Unit tests cover collapsing repeated fixes, interpolation between two distinct
+fixes, `discard` picking the closest fix and never repeating one, and a
+synthetic MP4 whose 30 samples carry two fixes end to end. Rust formatting, 40
+workspace tests and strict Clippy passed. The Action 6 file that exposed the
+duplicates is no longer on disk, so the output counts in the previous section
+still describe the old default and the new behaviour is covered by unit tests.

@@ -363,7 +363,7 @@ mod tests {
         boxed(kind, &body)
     }
 
-    fn sample_message(datetime: Option<&str>) -> Vec<u8> {
+    fn sample_message(datetime: Option<&str>, latitude: f64) -> Vec<u8> {
         protobuf::GenericMessage {
             video_global_info: Some(protobuf::VideoGlobalInfo {
                 module_info: vec![protobuf::ModuleInfo {
@@ -379,7 +379,7 @@ mod tests {
                     coordinates: Some(protobuf::Coordinates {
                         info: Some(protobuf::CoordinatesInfo {
                             coordinate_units: 1,
-                            latitude: Some(22.708_072_2),
+                            latitude: Some(latitude),
                             longitude: Some(114.248_571_8),
                         }),
                         gps_altitude_mm: 52_287,
@@ -483,7 +483,9 @@ mod tests {
     fn keeps_a_fix_whose_embedded_timestamp_jumps() {
         // 30 samples roughly one 29.97 fps frame apart, each reporting the
         // embedded clock truncated to whole seconds. Sample 10 is corrupt,
-        // exactly like the `12:06:12` sample seen in a real file.
+        // exactly like the `12:06:12` sample seen in a real file. Like the
+        // camera, the file repeats each fix for every frame, so it carries
+        // two fixes, not thirty.
         let base = datetime!(2026-11-05 02:06:01 UTC);
         let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
         let mut samples = Vec::new();
@@ -494,7 +496,12 @@ mod tests {
             } else {
                 datetime.format(&format).expect("format timestamp")
             };
-            samples.push(sample_message(Some(&text)));
+            let latitude = if index < 15 {
+                22.708_072_2
+            } else {
+                22.709_072_2
+            };
+            samples.push(sample_message(Some(&text), latitude));
         }
 
         let extraction = extract_from_temp_mp4("corrupt", &samples).expect("extract");
@@ -520,19 +527,21 @@ mod tests {
         }
 
         // Linear resampling used to reject the whole file here.
-        let points = resample(
-            &extraction.points,
-            extraction.frame_rate,
-            2.0,
-            ResampleMethod::Linear,
-        )
-        .expect("resample");
-        assert!(!points.is_empty());
+        let points = resample(&extraction.points, 2.0, ResampleMethod::Linear).expect("resample");
+        let latitudes: Vec<f64> = points.iter().map(|point| point.latitude).collect();
+        assert_eq!(latitudes, vec![22.708_072_2, 22.709_072_2]);
+
+        // The per-frame repeats are one fix each, not thirty points.
+        let fixes = resample(&extraction.points, 2.0, ResampleMethod::None).expect("none");
+        assert_eq!(fixes.len(), 2);
     }
 
     #[test]
     fn rejects_a_track_without_embedded_timestamps() {
-        let samples = [sample_message(None), sample_message(None)];
+        let samples = [
+            sample_message(None, 22.708_072_2),
+            sample_message(None, 22.709_072_2),
+        ];
 
         let error = extract_from_temp_mp4("no-time", &samples).expect_err("no anchor");
         assert!(matches!(error, Error::MissingTimestamps));

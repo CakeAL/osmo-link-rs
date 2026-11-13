@@ -288,18 +288,21 @@ Intel 模拟器构建使用 `x86_64-apple-ios` target。蓝牙配对、拍摄及
 它按 `stsd` 的 sample entry `djmd` 选轨，不依赖固定的第 3 条 `trak`。
 
 ```sh
-cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
-cargo run -p osmo_gps_extract_gpx -- --resample none input.MP4 output.gpx
-cargo run -p osmo_gps_extract_gpx -- -r discard -f 1 input.MP4 output.gpx
-cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx
+cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx                    # 每个真实定位一个点
+cargo run -p osmo_gps_extract_gpx -- -r linear -f 2 input.MP4 output.gpx     # 2 Hz 线性插值
+cargo run -p osmo_gps_extract_gpx -- -r discard -f 0.5 input.MP4 output.gpx  # 每 2 秒一个点
+cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx               # 嵌入时间减 8 小时
 ```
 
-默认 2 Hz 线性插值；`--resample none` 保留全部样本，`discard` 按帧率等间隔丢弃。
+默认每个真实定位输出一个点：App 默认按 10 Hz 下发，但手机 GNSS 约 1 Hz，相机又对
+每一帧重复写入当前定位，相邻的相同定位会在输出前合并。`-r linear` 在真实定位之间
+插值，`-r discard` 按时间取最近的定位、不插值。
 `--timezone-offset` 从嵌入的 naive 时间中减去指定小时数，默认 0。
 GPX 由 `gpx` crate 生成，protobuf 由 `prost` 解码；详细说明见
 [crate README](crates/osmo_gps_extract_gpx/README.md)。
 
-已用 Action 6 的 16 GB 测试文件验证：71,386 个 `djmd` 样本，默认输出 4,309 个点。
+已用 Action 6 的 16 GB 测试文件验证：71,400 个 `djmd` 样本中 66,270 个带定位，
+真实定位约 1 Hz。
 
 ## 开发检查
 
@@ -310,7 +313,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cd android && ./gradlew :app:assembleDebug   # Android；Gradle 会顺带构建 Rust
 ```
 
-核心 6 个测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值、状态字段的模式/机型解释及扫描错误映射；视频提取 crate 另有 12 个测试，覆盖 MP4 样本表映射、protobuf 往返、时间解析、重采样和 GPX 输出。
+核心 6 个测试覆盖官方协议帧、GPS 单位/日期转换、模式切换应答兼容、枚举取值、状态字段的模式/机型解释及扫描错误映射；视频提取 crate 另有 24 个测试，覆盖 MP4 样本表映射、protobuf 往返（含有符号海拔）、时间解析与锚点、重复定位合并、重采样和 GPX 输出。
 CLI 默认显示主动控制命令发送的 DATA 数据段，以及按序列号和命令号匹配到的应答 DATA：
 
 ```text

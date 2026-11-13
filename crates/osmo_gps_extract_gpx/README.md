@@ -12,7 +12,8 @@ protobuf `GenericMessage`。本 crate：
   时刻（对全部样本的偏移取中位数，个别写坏的时间戳不会移动整条轨迹）；
 - 用 `prost` 按 DJI proto 解码 `GenericMessage.gps_info`；
 - 用 `gpx` crate 写 GPX 1.1；
-- 默认按 2 Hz 线性插值输出，也支持保留原始点或等间隔丢弃。
+- 默认每个真实定位输出一个点：DJI 对每一帧都写一条 `gps_info`，没有新定位时
+  重复上一条，这些重复样本在输出前合并。
 
 Action 4 / 5 / 6 的 GPS 字段编号一致，区别只是 `proto_name`
 （`dvtm_ac203.proto` / `dvtm_ac204.proto` / `dvtm_ac206.proto`）。
@@ -20,14 +21,14 @@ Action 4 / 5 / 6 的 GPS 字段编号一致，区别只是 `proto_name`
 ## 用法
 
 ```sh
-# 默认 2 Hz、线性插值
+# 默认：每个真实定位一个点（手机 GNSS 约 1 Hz，重复样本已合并）
 cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
 
-# 保留全部原始样本（约视频帧率，例如 29.97 Hz）
-cargo run -p osmo_gps_extract_gpx -- --resample none input.MP4 output.gpx
+# 2 Hz 线性插值：在相邻真实定位之间插值，不会产生重复坐标
+cargo run -p osmo_gps_extract_gpx -- -r linear -f 2 input.MP4 output.gpx
 
-# 按帧率等间隔丢弃
-cargo run -p osmo_gps_extract_gpx -- -r discard -f 1 input.MP4 output.gpx
+# 按时间抽样：每 2 秒取最近的一个定位，不插值
+cargo run -p osmo_gps_extract_gpx -- -r discard -f 0.5 input.MP4 output.gpx
 
 # 嵌入时间减 8 小时（默认 0，即原样输出）
 cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx
@@ -40,8 +41,8 @@ cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx
 | 选项 | 说明 |
 | --- | --- |
 | `-o, --output <path>` | 输出 GPX 路径 |
-| `-f, --frequency <Hz>` | 输出频率，默认 2 |
-| `-r, --resample <method>` | `none` / `discard` / `linear`，默认 `linear` |
+| `-f, --frequency <Hz>` | `discard` / `linear` 的输出频率，默认 2 |
+| `-r, --resample <method>` | `none` / `discard` / `linear`，默认 `none` |
 | `-t, --timezone-offset <h>` | 从嵌入时间中减去的小时数，默认 0 |
 | `-h, --help` | 帮助 |
 | `-V, --version` | 版本 |
@@ -58,19 +59,15 @@ fn main() -> Result<(), osmo_gps_extract_gpx::Error> {
         "input.MP4",
         ExtractOptions { timezone_offset_hours: 0.0 },
     )?;
-    let points = resample(
-        &extraction.points,
-        extraction.frame_rate,
-        2.0,
-        ResampleMethod::Linear,
-    )?;
+    let points = resample(&extraction.points, 2.0, ResampleMethod::Linear)?;
     write_gpx_file("output.gpx", &points, "DJI track")?;
     Ok(())
 }
 ```
 
 `Extraction` 还带有 `proto_name`、`camera_name`、`serial_number`、
-`frame_rate` 和 `skipped_samples`，可用于校验机型或诊断。
+`frame_rate` 和 `skipped_samples`，可用于校验机型或诊断。`resample` 只按时间
+工作，不再需要帧率参数。
 
 ## 关于依赖
 
@@ -94,6 +91,11 @@ MP4 容器层保留了一个很小的 box 解析器。原因是 `mp4` crate 0.14
   里）。导出只会忽略它对绝对时刻的影响，该样本的位置仍然保留。
 - `gps_altitude_mm` 是**有符号**值：低于椭球面时 DJI 用 10 字节 varint 写负数，
   按无符号读取会得到四百多万米的错误高程。
+- 手机 GNSS 大约 1 Hz（Android 用 `location.time`，iOS 用 `CLLocation.timestamp`），
+  而 App 默认按 10 Hz 下发同一个定位，相机再按视频帧（约 30 Hz）重复写入。
+  所以一条视频里的真实定位通常只有 1 Hz：相邻的相同定位会在输出前合并，
+  `-r discard` 的实际频率不会高于真实定位频率；需要更高频率只能用 `-r linear`
+  在真实定位之间插值。
 - `djmd` 轨的样本通常是 one-sample-per-chunk；实现按 `stsc` 处理多 sample/chunk，
   但这种情况没有真实文件覆盖。
 - `gpx` 0.10 没有暴露 `<extensions>` 字段，因此没有输出加速度计/derivatives；

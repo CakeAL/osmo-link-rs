@@ -27,7 +27,7 @@ cargo run -p macos-cli -- --connect OsmoAction4-B15B
 cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
 
 cargo fmt --all                        # 格式化（无 rustfmt.toml，用默认规则）
-cargo test --workspace                 # 37 个单元测试，全部离线
+cargo test --workspace                 # 40 个单元测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
 cargo check -p android-bridge --target aarch64-linux-android
@@ -126,7 +126,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 
 ## 验证与文档纪律
 
-- 本地可验证：fmt、core 6 个 + 视频提取 21 个单元测试、clippy、两个交叉 target 的 `cargo check`、
+- 本地可验证：fmt、core 6 个 + 视频提取 24 个单元测试、clippy、两个交叉 target 的 `cargo check`、
   `./gradlew :app:assembleDebug`（含 R8 的 release 也应能构建）。
 - 硬件相关（扫描、配对、录制、休眠、GPS 落盘）**必须真机验证**；不跑硬件就不要在文档里
   写"已验证"。新增未验证能力时，同步更新 [docs/macos-validation.md](docs/macos-validation.md)

@@ -27,9 +27,6 @@ pub enum Error {
     #[error("invalid argument: {0}")]
     Argument(String),
 
-    #[error("frame rate is required for discard resampling")]
-    MissingFrameRate,
-
     #[error("GPS timestamps are not monotonically increasing")]
     UnsortedTimestamps,
 
