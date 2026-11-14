@@ -1,8 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="osmo_background">#FFFFF9EF</color>
-    <color name="osmo_amber">#FFFFB020</color>
-    <color name="osmo_red">#FFFF3B30</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
 </resources>
