@@ -11,6 +11,8 @@ import com.cakeal.osmolink.bridge.OsmoNative
 import com.cakeal.osmolink.location.GpsTracker
 import com.cakeal.osmolink.service.BatteryAlertNotifier
 import com.cakeal.osmolink.service.OsmoService
+import com.cakeal.osmolink.service.TemperatureAlertNotifier
+import com.cakeal.osmolink.ui.modeLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,8 +37,11 @@ object OsmoRepository : BridgeListener {
     private var gps: GpsTracker? = null
     private var defaultGpsPending = false
     private val fixTimes = ArrayDeque<Long>()
+    private val events = EventLog()
     @Volatile
     private var lowBatteryAlertSent = false
+    @Volatile
+    private var lastTemperatureCode = 0
 
     /** Called once from [com.cakeal.osmolink.OsmoApp]. */
     fun attach(application: Context) {
@@ -159,7 +164,8 @@ object OsmoRepository : BridgeListener {
         }
         if (tracker.start()) {
             gps = tracker
-            update { it.copy(gpsEnabled = true) }
+            val recent = record("定位注入已开启")
+            update { it.copy(gpsEnabled = true, recentEvents = recent) }
         } else {
             tracker.stop()
             update { it.copy(message = "无法启动定位，请确认 GPS 已开启") }
@@ -177,8 +183,15 @@ object OsmoRepository : BridgeListener {
         gps = null
         OsmoNative.nativeGpsStop()
         fixTimes.clear()
+        val recent = if (_state.value.gpsEnabled) record("定位注入已暂停") else null
         update {
-            it.copy(gpsEnabled = false, gpsRate = 0.0, gpsAccuracy = null, gpsSatellites = 0)
+            it.copy(
+                gpsEnabled = false,
+                gpsRate = 0.0,
+                gpsAccuracy = null,
+                gpsSatellites = 0,
+                recentEvents = recent ?: it.recentEvents,
+            )
         }
     }
 
@@ -246,6 +259,9 @@ object OsmoRepository : BridgeListener {
             }
             "connected" -> {
                 lowBatteryAlertSent = false
+                lastTemperatureCode = 0
+                val name = json.optString("name").ifBlank { "Osmo 相机" }
+                val recent = record("已连接 $name")
                 update {
                     defaultGpsPending = true
                     it.copy(
@@ -256,31 +272,53 @@ object OsmoRepository : BridgeListener {
                         deviceName = json.optString("name"),
                         modelName = json.optString("modelName"),
                         modes = parseModes(json),
+                        recentEvents = recent,
                         message = null,
                     )
                 }
             }
-            "connectFailed" -> update {
+            "connectFailed" -> {
                 val detail = json.optString("message")
-                it.copy(
-                    connecting = false,
-                    pairing = null,
-                    message = if (json.optBoolean("auto")) {
-                        "自动连接失败：$detail"
-                    } else {
-                        "连接失败：$detail"
-                    },
-                )
+                val auto = json.optBoolean("auto")
+                // Auto-connect misses on every scan when no paired camera is
+                // nearby; only user-initiated failures belong in the feed.
+                val recent = if (auto) null else record("连接失败：${detail.ifBlank { "未知原因" }}")
+                update {
+                    it.copy(
+                        connecting = false,
+                        pairing = null,
+                        message = if (auto) {
+                            "自动连接失败：$detail"
+                        } else {
+                            "连接失败：$detail"
+                        },
+                        recentEvents = recent ?: it.recentEvents,
+                    )
+                }
             }
             "status" -> {
                 val status = parseStatus(json)
+                val previous = _state.value.status
+                val lines = buildList {
+                    if (previous.hasData && previous.modeCode != status.modeCode) {
+                        add("相机模式切换至${modeLabel(status.modeName)} (0x${status.modeCode.toString(16).uppercase()})")
+                    }
+                    if (previous.hasData && status.temperatureCode >= 2 &&
+                        status.temperatureCode > previous.temperatureCode
+                    ) {
+                        add(temperatureEventText(status.temperatureCode))
+                    }
+                }
+                val recent = if (lines.isEmpty()) null else record(*lines.toTypedArray())
                 update { current ->
                     current.copy(
                         status = status,
                         modeInfo = current.modeInfo.takeIf { current.status.modeCode == status.modeCode },
+                        recentEvents = recent ?: current.recentEvents,
                     )
                 }
                 checkLowBattery(status.battery)
+                checkTemperature(status.temperatureCode)
             }
             "modeInfo" -> update {
                 val info = listOf(json.optString("name"), json.optString("parameters"))
@@ -297,6 +335,16 @@ object OsmoRepository : BridgeListener {
             "command" -> {
                 val action = json.optString("action")
                 val ok = json.optBoolean("ok")
+                val label = commandLabel(action)
+                val event = when {
+                    ok && action == "record.start" -> "开始录像"
+                    ok && action == "record.stop" -> "停止录像"
+                    ok && action == "shutter" -> "已拍照"
+                    // Mode changes are reported by the following status push.
+                    ok -> null
+                    else -> "操作失败：$label"
+                }
+                val recent = event?.let { record(it) }
                 update { current ->
                     val status = when {
                         action == "record.start" && ok -> current.status.copy(capturing = true)
@@ -306,24 +354,32 @@ object OsmoRepository : BridgeListener {
                     current.copy(
                         pendingAction = null,
                         status = status,
+                        recentEvents = recent ?: current.recentEvents,
                         message = if (ok) {
                             null
                         } else {
-                            json.optString("error").ifBlank { "操作失败：$action" }
+                            json.optString("error").ifBlank { "操作失败：$label" }
                         },
                     )
                 }
             }
             "warning", "error", "gpsError" ->
                 update { it.copy(message = json.optString("message")) }
-            "reconnecting" -> update {
+            "reconnecting" -> {
                 val attempt = json.optInt("attempt")
-                it.copy(reconnectAttempt = attempt, message = "连接中断，正在重连（第 ${attempt} 次）")
+                val text = "连接中断，正在重连（第 $attempt 次）"
+                val recent = record(text)
+                update { it.copy(reconnectAttempt = attempt, message = text, recentEvents = recent) }
             }
-            "reconnected" -> update { it.copy(reconnectAttempt = null, message = "已重新连接") }
+            "reconnected" -> {
+                val recent = record("已重新连接")
+                update { it.copy(reconnectAttempt = null, message = "已重新连接", recentEvents = recent) }
+            }
             "disconnected" -> {
                 lowBatteryAlertSent = false
+                lastTemperatureCode = 0
                 stopGpsInternal()
+                val recent = record("已断开连接")
                 update {
                     it.copy(
                         connected = false,
@@ -337,6 +393,7 @@ object OsmoRepository : BridgeListener {
                         modeInfo = null,
                         deviceName = "",
                         modelName = "",
+                        recentEvents = recent,
                     )
                 }
             }
@@ -358,6 +415,42 @@ object OsmoRepository : BridgeListener {
         lowBatteryAlertSent = true
         val name = _state.value.deviceName.ifBlank { "Osmo 相机" }
         BatteryAlertNotifier.notify(context, name, battery, settings.threshold)
+        val recent = record("相机电量低：$battery%")
+        update { it.copy(recentEvents = recent) }
+    }
+
+    /**
+     * Alerts once per escalation into a recording-stopping temperature level.
+     *
+     * The level is remembered even while alerts are off so turning the
+     * setting on does not replay a warning the camera already reported.
+     */
+    @Synchronized
+    private fun checkTemperature(code: Int) {
+        if (!attached) return
+        val previous = lastTemperatureCode
+        lastTemperatureCode = code
+        if (!TemperatureAlertSettings.load(context).enabled) return
+        if (!TemperatureAlertNotifier.shouldAlert(previous, code)) return
+        val name = _state.value.deviceName.ifBlank { "Osmo 相机" }
+        TemperatureAlertNotifier.notify(context, name, code)
+    }
+
+    /** Append lines to the in-memory activity feed and return the new snapshot. */
+    private fun record(vararg lines: String): List<RecentEvent> {
+        for (line in lines) events.add(line)
+        return events.snapshot()
+    }
+
+    private fun temperatureEventText(code: Int): String =
+        if (code >= 3) "相机温度过高，即将关机" else "相机温度过高，无法录制"
+
+    private fun commandLabel(action: String): String = when (action) {
+        "record.start" -> "开始录像"
+        "record.stop" -> "停止录像"
+        "shutter" -> "拍照"
+        "mode" -> "切换模式"
+        else -> action
     }
 
     private fun parseModes(json: JSONObject): List<ModeItem> {

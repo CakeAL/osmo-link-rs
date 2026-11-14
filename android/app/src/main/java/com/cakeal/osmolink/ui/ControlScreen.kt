@@ -44,6 +44,7 @@ internal fun ControlScreen(
             ModePicker(state, onMode)
             StatusDetails(state)
             GpsCard(state, onGpsToggle)
+            RecentEventsCard(state)
         }
         ControlBar(state, onShutter, onRecord)
     }

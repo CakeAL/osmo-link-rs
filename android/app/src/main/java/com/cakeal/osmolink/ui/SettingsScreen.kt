@@ -205,6 +205,29 @@ internal fun SettingsScreen(
                 )
             }
         }
+        SettingsGroup("温度提醒") {
+            ListItem(
+                headlineContent = { Text("高温通知") },
+                supportingContent = {
+                    Text(
+                        if (preferences.temperatureAlertEnabled) {
+                            "相机温度达到「无法录制」或「即将关机」时震动并发送通知"
+                        } else {
+                            "已关闭，不会震动或发送通知"
+                        },
+                    )
+                },
+                trailingContent = {
+                    Switch(checked = preferences.temperatureAlertEnabled, onCheckedChange = null)
+                },
+                modifier = Modifier.toggleable(
+                    value = preferences.temperatureAlertEnabled,
+                    role = Role.Switch,
+                    onValueChange = preferences::updateTemperatureAlertEnabled,
+                ),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
         SettingsGroup {
             SettingsRow("关于 Osmo Link", "版本 ${BuildConfig.VERSION_NAME}", onClick = onAbout)
         }

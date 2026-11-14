@@ -58,5 +58,7 @@ data class UiState(
     val gpsSatellites: Int = 0,
     /** Action name while a command is in flight; blocks duplicate taps. */
     val pendingAction: String? = null,
+    /** Session-scoped activity feed, newest first. */
+    val recentEvents: List<RecentEvent> = emptyList(),
     val message: String? = null,
 )

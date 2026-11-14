@@ -74,6 +74,7 @@ internal fun ConnectScreen(
             }
             NearbyDevices(state, onConnect)
             ConnectionHints()
+            RecentEventsCard(state)
         }
     }
 }
