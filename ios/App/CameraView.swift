@@ -15,6 +15,7 @@ struct CameraView: View {
                 modeCard
                 detailsCard
                 gpsCard
+                RecentEventsCard(remote: remote)
             }
             .frame(maxWidth: AppTheme.contentWidth)
             .frame(maxWidth: .infinity)
@@ -549,6 +550,50 @@ private struct CaptureGlass: ViewModifier {
             content.glassEffect(.regular.interactive(), in: .circle)
         } else {
             content.background(.regularMaterial, in: Circle())
+        }
+    }
+}
+
+/// Session-scoped activity feed shared by the connected camera page and the
+/// discovery page. Kept in this file so the Xcode project (explicit file list)
+/// needs no new file reference.
+struct RecentEventsCard: View {
+    @ObservedObject var remote: RemoteStore
+    var visibleLimit = 10
+
+    private static let timeFormat: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    @ViewBuilder
+    var body: some View {
+        if !remote.recentEvents.isEmpty {
+            let shown = Array(remote.recentEvents.prefix(visibleLimit))
+            GlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeader("最近事件", systemImage: "clock")
+                    VStack(spacing: 9) {
+                        ForEach(shown) { event in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(Self.timeFormat.string(from: event.at))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 58, alignment: .leading)
+                                Text(event.text)
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    if remote.recentEvents.count > shown.count {
+                        Text("仅显示最近 \(shown.count) 条 · 共 \(remote.recentEvents.count) 条")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
         }
     }
 }

@@ -13,7 +13,14 @@ private let bridgeCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { e
     }
 }
 
-private final class BatteryNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+/// One line in the home screen activity feed.
+struct RecentEvent: Identifiable, Equatable {
+    let id = UUID()
+    let at: Date
+    let text: String
+}
+
+private final class CameraNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -31,6 +38,7 @@ final class RemoteStore: ObservableObject {
 
     static let shared = RemoteStore()
     static let batteryThresholds = [5, 10, 15, 20, 30]
+    static let recentEventLimit = 20
 
     @Published private(set) var phase = Phase.idle
     @Published private(set) var devices: [CameraDevice] = []
@@ -41,6 +49,8 @@ final class RemoteStore: ObservableObject {
     @Published private(set) var modeInfo: String?
     @Published private(set) var hasSearched = false
     @Published private(set) var pending = false
+    /// Session-scoped activity feed, newest first.
+    @Published private(set) var recentEvents: [RecentEvent] = []
     @Published var message: String?
     @Published var locationInjectionEnabled: Bool {
         didSet {
@@ -48,8 +58,10 @@ final class RemoteStore: ObservableObject {
             guard phase == .connected else { return }
             if locationInjectionEnabled {
                 location.start()
+                record("定位注入已开启")
             } else {
                 location.stop()
+                record("定位注入已暂停")
             }
         }
     }
@@ -74,14 +86,22 @@ final class RemoteStore: ObservableObject {
             UserDefaults.standard.set(lowBatteryThreshold, forKey: "lowBatteryAlertThreshold")
         }
     }
+    @Published var temperatureAlertEnabled = UserDefaults.standard.object(forKey: "temperatureAlertEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(temperatureAlertEnabled, forKey: "temperatureAlertEnabled")
+        }
+    }
 
     let location = LocationInjector()
 
     private let logger = Logger(subsystem: "com.cakeal.osmolink", category: "Bridge")
-    private let notificationDelegate = BatteryNotificationDelegate()
+    private let notificationDelegate = CameraNotificationDelegate()
     private let activity: (any RecordingActivityUpdating)?
     private var recording: RecordingState?
     private var lowBatteryAlertSent = false
+    private var lastTemperatureCode = 0
+    /// Feed line to record when the in-flight command succeeds.
+    private var pendingCommandNote: String?
     private var isActive = false
     private var started = false
 
@@ -131,8 +151,8 @@ final class RemoteStore: ObservableObject {
         phase = .scanning
     }
 
-    func requestBatteryNotificationPermission() {
-        guard lowBatteryAlertEnabled else { return }
+    func requestNotificationPermission() {
+        guard lowBatteryAlertEnabled || temperatureAlertEnabled else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
@@ -157,6 +177,7 @@ final class RemoteStore: ObservableObject {
 
     func capture() {
         guard canCapture, let status else { return }
+        pendingCommandNote = status.photoMode ? "已拍照" : (status.isRecording ? "停止录像" : "开始录像")
         queueCommand(osmo_ios_capture(status.modeCode, status.capturing))
     }
 
@@ -182,7 +203,10 @@ final class RemoteStore: ObservableObject {
 
     private func queueCommand(_ accepted: Bool) {
         pending = accepted
-        if !accepted { message = "暂时无法发送命令，请重试。" }
+        if !accepted {
+            pendingCommandNote = nil
+            message = "暂时无法发送命令，请重试。"
+        }
     }
 
     fileprivate func receive(_ json: String) {
@@ -209,16 +233,28 @@ final class RemoteStore: ObservableObject {
             pairing = nil
             phase = .connected
             lowBatteryAlertSent = false
-            requestBatteryNotificationPermission()
+            lastTemperatureCode = 0
+            record("已连接 \(camera.title)")
+            requestNotificationPermission()
             if locationInjectionEnabled {
                 location.start()
             }
         case let .status(status):
             if phase == .connected {
-                if self.status?.modeCode != status.modeCode { modeInfo = nil }
+                let previous = self.status
+                if previous?.modeCode != status.modeCode {
+                    modeInfo = nil
+                    record("相机模式切换至\(status.modeTitle) (0x\(String(status.modeCode, radix: 16, uppercase: true)))")
+                }
+                if let previous,
+                   status.temperatureCode >= 2,
+                   status.temperatureCode > previous.temperatureCode {
+                    record(temperatureEventText(status.temperatureCode))
+                }
                 self.status = status
                 updateRecording(from: status)
                 checkLowBattery(status.battery)
+                checkTemperature(status.temperatureCode)
             }
         case let .version(details):
             version = details.isEmpty ? nil : details
@@ -230,11 +266,13 @@ final class RemoteStore: ObservableObject {
                 status = nil
                 modeInfo = nil
                 recording?.reconnecting = true
+                record("连接中断，正在重连（第 \(attempt) 次）")
                 updateActivity()
             }
         case .reconnected:
             if phase != .disconnecting {
                 phase = .connected
+                record("已重新连接")
                 if locationInjectionEnabled { location.start() }
             }
         case let .disconnected(reason):
@@ -247,21 +285,36 @@ final class RemoteStore: ObservableObject {
             pending = false
             recording = nil
             lowBatteryAlertSent = false
+            lastTemperatureCode = 0
+            pendingCommandNote = nil
             location.stop()
+            record("已断开连接")
             message = reason
             updateActivity()
         case .commandDone:
             pending = false
+            if let note = pendingCommandNote {
+                record(note)
+                pendingCommandNote = nil
+            }
         case let .commandFailed(error):
             pending = false
+            pendingCommandNote = nil
+            record("操作失败：\(error)")
             message = error
         case let .scanFailed(error):
             phase = .idle
             pairing = nil
+            record("搜索失败：\(error)")
             message = error
         case let .connectFailed(error, auto):
             phase = .idle
             pairing = nil
+            if !auto {
+                // Auto-connect misses on every scan when no paired camera is
+                // nearby; only user-initiated failures belong in the feed.
+                record("连接失败：\(error)")
+            }
             message = auto ? "自动连接失败：\(error)" : error
         case let .warning(warning):
             logger.warning("\(warning, privacy: .public)")
@@ -277,6 +330,7 @@ final class RemoteStore: ObservableObject {
         }
         guard !lowBatteryAlertSent else { return }
         lowBatteryAlertSent = true
+        record("相机电量低：\(battery)%")
 
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         let content = UNMutableNotificationContent()
@@ -289,6 +343,49 @@ final class RemoteStore: ObservableObject {
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    private func checkTemperature(_ code: Int) {
+        let previous = lastTemperatureCode
+        lastTemperatureCode = code
+        guard temperatureAlertEnabled, code >= 2, code > previous else { return }
+
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        let content = UNMutableNotificationContent()
+        content.title = code >= 3 ? "相机即将关机" : "相机温度过高"
+        content.body = temperatureMessage(code)
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "temperature-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    private func temperatureMessage(_ code: Int) -> String {
+        let name = camera?.title ?? "相机"
+        return code >= 3
+            ? "\(name) 温度过高，即将自动关机。请立即停止拍摄并降温。"
+            : "\(name) 温度高，已无法录制。请暂停使用并等待降温。"
+    }
+
+    private func temperatureEventText(_ code: Int) -> String {
+        code >= 3 ? "相机温度过高，即将关机" : "相机温度过高，无法录制"
+    }
+
+    /// Newest first, with a short window to absorb duplicate pushes.
+    private func record(_ text: String) {
+        let now = Date()
+        if let latest = recentEvents.first,
+           latest.text == text,
+           now.timeIntervalSince(latest.at) < 2 {
+            return
+        }
+        recentEvents.insert(RecentEvent(at: now, text: text), at: 0)
+        if recentEvents.count > Self.recentEventLimit {
+            recentEvents.removeLast(recentEvents.count - Self.recentEventLimit)
+        }
     }
 
     private func updateRecording(from status: CameraStatus) {

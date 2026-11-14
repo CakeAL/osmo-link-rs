@@ -122,6 +122,7 @@ struct RemoteView: View {
                             .foregroundStyle(.orange)
                     }
                 }
+                RecentEventsCard(remote: remote)
                 Label(
                     "支持 Osmo Action 4 / 5 Pro / 6 与 Osmo 360",
                     systemImage: "checkmark.seal"

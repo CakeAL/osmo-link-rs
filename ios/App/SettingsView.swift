@@ -37,7 +37,7 @@ struct SettingsView<Route: Hashable>: View {
                     get: { remote.lowBatteryAlertEnabled },
                     set: { enabled in
                         remote.lowBatteryAlertEnabled = enabled
-                        if enabled { remote.requestBatteryNotificationPermission() }
+                        if enabled { remote.requestNotificationPermission() }
                     }
                 ))
                 if remote.lowBatteryAlertEnabled {
@@ -51,6 +51,20 @@ struct SettingsView<Route: Hashable>: View {
                 Text("电量提醒")
             } footer: {
                 Text("开启后，连接相机时电量低于所选阈值会震动并发送通知。通知权限可在系统设置中管理。")
+            }
+
+            Section {
+                Toggle("高温通知", isOn: Binding(
+                    get: { remote.temperatureAlertEnabled },
+                    set: { enabled in
+                        remote.temperatureAlertEnabled = enabled
+                        if enabled { remote.requestNotificationPermission() }
+                    }
+                ))
+            } header: {
+                Text("温度提醒")
+            } footer: {
+                Text("相机温度达到「无法录制」或「即将关机」时震动并发送通知。降温后再次升温会重新提醒。")
             }
 
             Section {
