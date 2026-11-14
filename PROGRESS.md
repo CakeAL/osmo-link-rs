@@ -575,3 +575,29 @@ synthetic MP4 whose 30 samples carry two fixes end to end. Rust formatting, 40
 workspace tests and strict Clippy passed. The Action 6 file that exposed the
 duplicates is no longer on disk, so the output counts in the previous section
 still describe the old default and the new behaviour is covered by unit tests.
+
+## Mobile: high-temperature alerts and a recent-events card
+
+`1D02` byte 30 (`temp_over`) was already decoded into `TemperatureStatus`, but
+neither app acted on it. Both apps now raise an edge-triggered alert when the
+code reaches `2` (too hot to record) or `3` (shutdown imminent), and only when it
+climbs above the previously seen code, so a camera that stays hot does not
+re-notify on every 2 Hz status push; returning to `0` re-arms it. Android puts
+the switch in a new "温度提醒" settings group and reuses `AlertNotifier`, with a
+separate `osmo_link_temperature` channel and notification id 1003. iOS stores
+`temperatureAlertEnabled` in `UserDefaults`, reuses the existing notification
+delegate, and requests authorization when either alert type is enabled.
+
+Both apps also record a session-scoped activity feed of connection, disconnect,
+reconnect, mode change, capture and alert events. Feed entries are newest first,
+deduplicate identical text inside two seconds, and keep the latest 20 entries.
+Android renders `RecentEventsCard` at the bottom of the control and discovery
+pages; iOS renders the shared `RecentEventsCard` in `CameraView` and
+`RemoteView`. Command success notes are recorded only after the bridge reports
+completion, so the feed never claims a capture that failed.
+
+Android unit tests cover `TemperatureAlertNotifier.shouldAlert`/copy and
+`EventLog` ordering, deduplication and capacity; `:app:testDebugUnitTest` and
+`:app:assembleDebug -PskipRust=true` passed. The iOS simulator build passed with
+`xcodebuild … -destination 'platform=iOS Simulator,name=iPhone 18 Pro'`.
+Mobile hardware behaviour is still unverified on a device.
