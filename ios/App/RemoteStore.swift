@@ -4,13 +4,14 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-private let bridgeCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { event in
-    guard let event else { return }
-    // The Rust string is valid only while the C callback is executing.
-    let json = String(cString: event)
-    DispatchQueue.main.async {
-        RemoteStore.shared.receive(json)
+private final class SessionListener: MobileListener {
+    func onEvent(event: MobileEvent) {
+        DispatchQueue.main.async {
+            RemoteStore.shared.receive(event)
+        }
     }
+
+    func setBleScanning(enabled: Bool) -> String? { nil }
 }
 
 /// One line in the home screen activity feed.
@@ -141,7 +142,7 @@ final class RemoteStore: ObservableObject {
 
     func search() {
         guard phase == .idle, startBridge() else { return }
-        guard osmo_ios_scan(autoConnectEnabled) else {
+        guard startScan(seconds: 5, autoConnect: autoConnectEnabled) else {
             message = "暂时无法开始搜索，请重试。"
             return
         }
@@ -158,7 +159,7 @@ final class RemoteStore: ObservableObject {
 
     func connect(_ device: CameraDevice) {
         guard phase == .idle || phase == .scanning, devices.contains(where: { $0.id == device.id }) else { return }
-        if device.id.withCString({ osmo_ios_connect($0) }) {
+        if OsmoLink.connect(id: device.id) {
             message = nil
             phase = .connecting
         } else {
@@ -168,7 +169,7 @@ final class RemoteStore: ObservableObject {
 
     func disconnect() {
         guard camera != nil, phase != .disconnecting else { return }
-        if osmo_ios_disconnect() {
+        if OsmoLink.disconnect() {
             phase = .disconnecting
         } else {
             message = "暂时无法断开连接，请重试。"
@@ -178,12 +179,12 @@ final class RemoteStore: ObservableObject {
     func capture() {
         guard canCapture, let status else { return }
         pendingCommandNote = status.photoMode ? "已拍照" : (status.isRecording ? "停止录像" : "开始录像")
-        queueCommand(osmo_ios_capture(status.modeCode, status.capturing))
+        queueCommand(OsmoLink.capture(mode: status.modeCode, capturing: status.capturing))
     }
 
     func selectMode(_ mode: CameraMode) {
         guard canChangeMode, mode.code != status?.modeCode, modes.contains(where: { $0.code == mode.code }) else { return }
-        queueCommand(osmo_ios_set_mode(mode.code))
+        queueCommand(setMode(code: mode.code))
     }
 
     private func startBridge() -> Bool {
@@ -193,7 +194,7 @@ final class RemoteStore: ObservableObject {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             )
             let directory = support.appendingPathComponent("Osmo Link", isDirectory: true)
-            started = directory.path.withCString { osmo_ios_start($0, bridgeCallback) }
+            started = startSession(directory: directory.path, listener: SessionListener())
             if !started { message = "无法启动蓝牙控制模块。" }
         } catch {
             message = error.localizedDescription
@@ -209,28 +210,22 @@ final class RemoteStore: ObservableObject {
         }
     }
 
-    fileprivate func receive(_ json: String) {
-        let event: BridgeEvent
-        do {
-            event = try JSONDecoder().decode(BridgeEvent.self, from: Data(json.utf8))
-        } catch {
-            logger.error("Could not decode camera event: \(error.localizedDescription)")
-            return
-        }
+    fileprivate func receive(_ event: MobileEvent) {
         switch event {
         case let .devices(devices, scanning, connecting):
-            self.devices = devices
+            self.devices = devices.map { CameraDevice(id: $0.id, name: $0.name, rssi: $0.rssi.map(Int.init)) }
             if phase == .scanning && !scanning {
                 phase = connecting ? .connecting : .idle
             }
-        case let .pairing(info):
-            pairing = info
+        case let .pairing(code, device, firstTime, auto):
+            pairing = Pairing(device: device, firstTime: firstTime, code: Int(code), auto: auto)
             // The bridge connects automatically right after a scan finds a
             // saved camera, without a matching tap in the UI.
             if phase == .idle || phase == .scanning {
                 phase = .connecting
             }
-        case let .connected(camera):
+        case let .connected(name, model, modes):
+            let camera = ConnectedCamera(name: name, model: model, modes: modes.map { CameraMode(code: $0.code, name: $0.name) })
             self.camera = camera
             pairing = nil
             phase = .connected
@@ -241,8 +236,9 @@ final class RemoteStore: ObservableObject {
             if locationInjectionEnabled {
                 location.start()
             }
-        case let .status(status):
+        case let .status(snapshot):
             if phase == .connected {
+                let status = CameraStatus(snapshot)
                 let previous = self.status
                 if previous?.modeCode != status.modeCode {
                     modeInfo = nil
@@ -258,13 +254,13 @@ final class RemoteStore: ObservableObject {
                 checkLowBattery(status.battery)
                 checkTemperature(status.temperatureCode)
             }
-        case let .version(details):
+        case let .version(_, details):
             version = details.isEmpty ? nil : details
         case let .modeInfo(name, parameters):
             modeInfo = [name, parameters].filter { !$0.isEmpty }.joined(separator: " · ")
         case let .reconnecting(attempt):
             if phase != .disconnecting {
-                phase = .reconnecting(attempt)
+                phase = .reconnecting(Int(attempt))
                 status = nil
                 modeInfo = nil
                 recording?.reconnecting = true
@@ -293,17 +289,15 @@ final class RemoteStore: ObservableObject {
             record("已断开连接")
             message = reason
             updateActivity()
-        case .commandDone:
+        case let .command(_, error):
             pending = false
-            if let note = pendingCommandNote {
+            if let error {
+                record("操作失败：\(error)")
+                message = error
+            } else if let note = pendingCommandNote {
                 record(note)
-                pendingCommandNote = nil
             }
-        case let .commandFailed(error):
-            pending = false
             pendingCommandNote = nil
-            record("操作失败：\(error)")
-            message = error
         case let .scanFailed(error):
             phase = .idle
             pairing = nil
@@ -318,6 +312,8 @@ final class RemoteStore: ObservableObject {
                 record("连接失败：\(error)")
             }
             message = auto ? "自动连接失败：\(error)" : error
+        case .gpsError:
+            break
         case let .warning(warning):
             logger.warning("\(warning, privacy: .public)")
             if phase == .connected || phase == .disconnecting { message = warning }

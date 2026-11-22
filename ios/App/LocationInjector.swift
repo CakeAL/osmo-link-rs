@@ -1,6 +1,5 @@
 import CoreLocation
 import Foundation
-import OSLog
 
 /// Streams Core Location fixes into the Rust bridge.
 ///
@@ -16,7 +15,6 @@ final class LocationInjector: NSObject, ObservableObject {
     @Published private(set) var message: String?
 
     private let manager = CLLocationManager()
-    private let logger = Logger(subsystem: "com.cakeal.osmolink", category: "Location")
     private var wantsUpdates = false
     private var fixTimes: [Date] = []
 
@@ -58,7 +56,7 @@ final class LocationInjector: NSObject, ObservableObject {
     func stop() {
         wantsUpdates = false
         manager.stopUpdatingLocation()
-        osmo_ios_gps_stop()
+        stopGps()
         isRunning = false
         rate = 0
         accuracy = nil
@@ -97,14 +95,20 @@ final class LocationInjector: NSObject, ObservableObject {
             rate = Double(fixTimes.count - 1) / max(0.01, now.timeIntervalSince(first))
         }
 
-        let sample = GpsSample(fix: fix)
-        guard let data = try? JSONEncoder().encode(sample),
-              let json = String(data: data, encoding: .utf8)
-        else {
-            logger.error("Could not encode location sample")
-            return
-        }
-        if !osmo_ios_gps_update(json) {
+        let sample = LocationSample(
+            timestampMs: fix.timestampMilliseconds,
+            longitude: fix.longitude,
+            latitude: fix.latitude,
+            altitudeM: fix.altitude,
+            northMps: fix.northMetersPerSecond,
+            eastMps: fix.eastMetersPerSecond,
+            downMps: 0,
+            verticalAccuracyM: fix.verticalAccuracy,
+            horizontalAccuracyM: fix.horizontalAccuracy,
+            speedAccuracyMps: fix.speedAccuracy,
+            satellites: 0
+        )
+        if !updateGps(sample: sample) {
             message = "定位暂未写入相机。"
         } else {
             message = nil
@@ -172,33 +176,5 @@ private struct LocationFix: Sendable {
         let course = location.course >= 0 ? location.course * .pi / 180 : 0
         northMetersPerSecond = speed * cos(course)
         eastMetersPerSecond = speed * sin(course)
-    }
-}
-
-private struct GpsSample: Encodable {
-    let timestamp_ms: Int64
-    let longitude: Double
-    let latitude: Double
-    let altitude_m: Double
-    let north_mps: Double
-    let east_mps: Double
-    let down_mps = 0.0
-    let vertical_accuracy_m: Double
-    let horizontal_accuracy_m: Double
-    let speed_accuracy_mps: Double
-    /// Core Location has no public satellite count. The Rust bridge transmits
-    /// this field verbatim, so zero means "unavailable" to the camera.
-    let satellites: UInt32 = 0
-
-    init(fix: LocationFix) {
-        timestamp_ms = fix.timestampMilliseconds
-        longitude = fix.longitude
-        latitude = fix.latitude
-        altitude_m = fix.altitude
-        north_mps = fix.northMetersPerSecond
-        east_mps = fix.eastMetersPerSecond
-        vertical_accuracy_m = fix.verticalAccuracy
-        horizontal_accuracy_m = fix.horizontalAccuracy
-        speed_accuracy_mps = fix.speedAccuracy
     }
 }

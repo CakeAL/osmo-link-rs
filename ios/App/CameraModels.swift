@@ -1,12 +1,12 @@
 import Foundation
 
-struct CameraDevice: Decodable, Identifiable {
+struct CameraDevice: Identifiable {
     let id: String
     let name: String
     let rssi: Int?
 }
 
-struct CameraMode: Decodable, Identifiable {
+struct CameraMode: Identifiable {
     let code: UInt8
     let name: String
 
@@ -50,7 +50,7 @@ struct CameraMode: Decodable, Identifiable {
     }
 }
 
-struct CameraStatus: Decodable {
+struct CameraStatus {
     let modeCode: UInt8
     let modeName: String
     let stateName: String
@@ -65,6 +65,23 @@ struct CameraStatus: Decodable {
     let remainingSeconds: Int
     let battery: Int
     let temperatureCode: Int
+
+    init(_ status: MobileStatus) {
+        modeCode = status.modeCode
+        modeName = status.modeName
+        stateName = status.stateName
+        photoMode = status.photoMode
+        capturing = status.capturing
+        resolution = status.resolution
+        fps = status.fps
+        eis = status.eis
+        recordSeconds = Int(status.recordSeconds)
+        remainingMb = Int(status.remainingMb)
+        remainingPhotos = Int(status.remainingPhotos)
+        remainingSeconds = Int(status.remainingSeconds)
+        battery = Int(status.battery)
+        temperatureCode = Int(status.temperatureCode)
+    }
 
     var modeTitle: String { CameraMode.title(for: modeName) }
     var isRecording: Bool { capturing && !photoMode && !modeName.hasPrefix("Unknown(") }
@@ -90,7 +107,7 @@ struct CameraStatus: Decodable {
     }
 }
 
-struct Pairing: Decodable, Identifiable {
+struct Pairing: Identifiable {
     let device: String
     let firstTime: Bool
     let code: Int
@@ -100,7 +117,7 @@ struct Pairing: Decodable, Identifiable {
     var id: String { device }
 }
 
-struct ConnectedCamera: Decodable {
+struct ConnectedCamera {
     let name: String
     let model: String
     let modes: [CameraMode]
@@ -112,64 +129,6 @@ struct ConnectedCamera: Decodable {
         case "Action6": "Osmo Action 6"
         case "Osmo360": "Osmo 360"
         default: name
-        }
-    }
-}
-
-enum BridgeEvent: Decodable {
-    case devices([CameraDevice], scanning: Bool, connecting: Bool)
-    case pairing(Pairing)
-    case connected(ConnectedCamera)
-    case status(CameraStatus)
-    case version(String)
-    case modeInfo(String, String)
-    case reconnecting(Int)
-    case reconnected
-    case disconnected(String?)
-    case commandDone
-    case commandFailed(String)
-    case scanFailed(String)
-    case connectFailed(String, Bool)
-    case warning(String)
-
-    private enum Keys: String, CodingKey {
-        case kind, payload, devices, details, attempt, message, name, parameters, auto, scanning, connecting
-    }
-
-    init(from decoder: Decoder) throws {
-        let event = try decoder.container(keyedBy: Keys.self)
-        let payload = try event.nestedContainer(keyedBy: Keys.self, forKey: .payload)
-        let kind = try event.decode(String.self, forKey: .kind)
-        switch kind {
-        case "devices":
-            self = .devices(
-                try payload.decode([CameraDevice].self, forKey: .devices),
-                scanning: try payload.decode(Bool.self, forKey: .scanning),
-                connecting: try payload.decode(Bool.self, forKey: .connecting)
-            )
-        case "pairing": self = .pairing(try event.decode(Pairing.self, forKey: .payload))
-        case "connected": self = .connected(try event.decode(ConnectedCamera.self, forKey: .payload))
-        case "status": self = .status(try event.decode(CameraStatus.self, forKey: .payload))
-        case "version": self = .version(try payload.decode(String.self, forKey: .details))
-        case "modeInfo":
-            self = .modeInfo(
-                try payload.decode(String.self, forKey: .name),
-                try payload.decode(String.self, forKey: .parameters)
-            )
-        case "reconnecting": self = .reconnecting(try payload.decode(Int.self, forKey: .attempt))
-        case "reconnected": self = .reconnected
-        case "disconnected": self = .disconnected(try payload.decodeIfPresent(String.self, forKey: .message))
-        case "commandDone": self = .commandDone
-        case "commandFailed": self = .commandFailed(try payload.decode(String.self, forKey: .message))
-        case "scanFailed": self = .scanFailed(try payload.decode(String.self, forKey: .message))
-        case "connectFailed":
-            self = .connectFailed(
-                try payload.decode(String.self, forKey: .message),
-                try payload.decodeIfPresent(Bool.self, forKey: .auto) ?? false
-            )
-        case "warning": self = .warning(try payload.decode(String.self, forKey: .message))
-        default:
-            throw DecodingError.dataCorruptedError(forKey: .kind, in: event, debugDescription: kind)
         }
     }
 }
