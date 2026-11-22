@@ -3,10 +3,7 @@
 -keep class com.nonpolynomial.** { *; }
 -keep class io.github.gedgygedgy.** { *; }
 
-# JNI entry points and the callback interface implemented in Kotlin.
+# Android scan JNI and UniFFI's JNA callback/structure members.
 -keep class com.cakeal.osmolink.bridge.OsmoNative { *; }
--keep interface com.cakeal.osmolink.bridge.BridgeListener { *; }
--keepclasseswithmembers class * implements com.cakeal.osmolink.bridge.BridgeListener {
-    public void onEvent(java.lang.String, java.lang.String);
-    public java.lang.String setBleScanning(boolean);
-}
+-keep class com.cakeal.osmolink.ffi.** { *; }
+-keep class com.sun.jna.** { *; }

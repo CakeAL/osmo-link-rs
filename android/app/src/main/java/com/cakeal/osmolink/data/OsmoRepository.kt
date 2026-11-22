@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.cakeal.osmolink.bridge.BridgeListener
 import com.cakeal.osmolink.bridge.CameraScan
 import com.cakeal.osmolink.bridge.OsmoNative
 import com.cakeal.osmolink.location.GpsTracker
@@ -18,8 +17,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import org.json.JSONException
-import org.json.JSONObject
+import com.cakeal.osmolink.ffi.MobileEvent
+import com.cakeal.osmolink.ffi.MobileListener
+import com.cakeal.osmolink.ffi.MobileStatus
+import com.cakeal.osmolink.ffi.connect as connectCamera
+import com.cakeal.osmolink.ffi.disconnect as disconnectCamera
+import com.cakeal.osmolink.ffi.record as recordCamera
+import com.cakeal.osmolink.ffi.setMode as setCameraMode
+import com.cakeal.osmolink.ffi.shutter as triggerShutter
+import com.cakeal.osmolink.ffi.startScan
+import com.cakeal.osmolink.ffi.startSession
+import com.cakeal.osmolink.ffi.stopGps as stopCameraGps
+import com.cakeal.osmolink.ffi.updateGps
 
 /**
  * Process-wide owner of the bridge, GPS tracker and UI state.
@@ -28,7 +37,7 @@ import org.json.JSONObject
  * connection and location stream alive after the UI is gone. The activity only
  * observes [state] and forwards intents.
  */
-object OsmoRepository : BridgeListener {
+object OsmoRepository : MobileListener {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -51,7 +60,7 @@ object OsmoRepository : BridgeListener {
         attached = true
         context = application.applicationContext
         cameraScan = CameraScan(context)
-        if (!OsmoNative.nativeInit(context.filesDir.absolutePath, this)) {
+        if (!OsmoNative.nativeBluetoothInit() || !startSession(context.filesDir.absolutePath, this)) {
             update { it.copy(message = "原生蓝牙初始化失败") }
         }
     }
@@ -60,7 +69,7 @@ object OsmoRepository : BridgeListener {
         val current = _state.value
         if (current.scanning || current.connected || current.connecting) return
         update { it.copy(scanning = true, hasSearched = true, devices = emptyList(), message = null) }
-        if (!OsmoNative.nativeScan(12, autoConnect)) {
+        if (!startScan(12u, autoConnect)) {
             update { it.copy(scanning = false, message = "无法开始扫描，请检查蓝牙与权限") }
         }
     }
@@ -69,30 +78,15 @@ object OsmoRepository : BridgeListener {
 
     fun connect(id: String) {
         if (_state.value.connecting || _state.value.connected) return
-        if (!OsmoNative.nativeConnect(id)) {
+        if (!connectCamera(id)) {
             update { if (it.connecting) it else it.copy(message = "连接请求失败") }
         }
     }
 
     fun disconnect() {
-        OsmoNative.nativeDisconnect()
+        if (!disconnectCamera()) return
         stopGpsInternal()
-        update {
-            it.copy(
-                connected = false,
-                connecting = false,
-                pairing = null,
-                pendingAction = null,
-                reconnectAttempt = null,
-                status = CameraStatus(),
-                modes = emptyList(),
-                version = null,
-                modeInfo = null,
-                deviceName = "",
-                modelName = "",
-                devices = emptyList(),
-            )
-        }
+        update { it.copy(devices = emptyList()) }
     }
 
     fun setMode(code: Int) {
@@ -102,7 +96,7 @@ object OsmoRepository : BridgeListener {
             current.modes.none { it.code == code }
         ) return
         update { it.copy(pendingAction = "mode") }
-        if (!OsmoNative.nativeSetMode(code)) {
+        if (!setCameraMode(code.toUByte())) {
             update { it.copy(pendingAction = null) }
         }
     }
@@ -113,14 +107,14 @@ object OsmoRepository : BridgeListener {
         val starting = !current.status.capturing
         val action = if (starting) "record.start" else "record.stop"
         update { it.copy(pendingAction = action) }
-        val sent = if (starting) OsmoNative.nativeRecordStart() else OsmoNative.nativeRecordStop()
+        val sent = recordCamera(starting)
         if (!sent) update { it.copy(pendingAction = null) }
     }
 
     fun shutter() {
         if (!_state.value.connected) return
         update { it.copy(pendingAction = "shutter") }
-        if (!OsmoNative.nativeShutter()) {
+        if (!triggerShutter()) {
             update { it.copy(pendingAction = null) }
         }
     }
@@ -149,20 +143,20 @@ object OsmoRepository : BridgeListener {
             update { it.copy(message = "请先在系统设置中开启定位") }
             return
         }
-        val tracker = GpsTracker(context) { sampleJson, accuracy, satellites ->
+        val tracker = GpsTracker(context) { sample ->
             val now = System.currentTimeMillis()
             fixTimes.addLast(now)
             while (fixTimes.isNotEmpty() && now - fixTimes.first() > 5_000) {
                 fixTimes.removeFirst()
             }
-            OsmoNative.nativeGpsUpdate(sampleJson)
+            updateGps(sample)
             val rate = fixTimes.size / 5.0
             update {
                 it.copy(
                     gpsEnabled = true,
                     gpsRate = rate,
-                    gpsAccuracy = accuracy,
-                    gpsSatellites = satellites,
+                    gpsAccuracy = sample.horizontalAccuracyM,
+                    gpsSatellites = sample.satellites.toInt(),
                 )
             }
         }
@@ -185,7 +179,7 @@ object OsmoRepository : BridgeListener {
         defaultGpsPending = false
         gps?.stop()
         gps = null
-        OsmoNative.nativeGpsStop()
+        stopCameraGps()
         fixTimes.clear()
         val recent = if (_state.value.gpsEnabled) record("定位注入已暂停") else null
         update {
@@ -239,41 +233,36 @@ object OsmoRepository : BridgeListener {
         }
     }
 
-    override fun onEvent(type: String, payload: String) {
-        if (type != "status") {
-            Log.d("OsmoBridge", "$type $payload")
+    override fun onEvent(event: MobileEvent) {
+        if (event !is MobileEvent.Status) {
+            Log.d("OsmoBridge", event.toString())
         }
-        val json = try {
-            JSONObject(payload)
-        } catch (_: JSONException) {
-            JSONObject()
-        }
-        when (type) {
-            "devices" -> update {
-                val connecting = json.optBoolean("connecting")
+        when (event) {
+            is MobileEvent.Devices -> update {
+                val connecting = event.connecting
                 it.copy(
-                    scanning = json.optBoolean("scanning"),
+                    scanning = event.scanning,
                     connecting = connecting,
-                    devices = parseDevices(json),
+                    devices = event.devices.map { device -> DeviceItem(device.id, device.name, device.rssi?.toInt()) },
                     message = if (connecting) null else it.message,
                 )
             }
-            "pairing" -> update {
+            is MobileEvent.Pairing -> update {
                 it.copy(
                     connecting = true,
                     message = null,
                     pairing = PairingInfo(
-                        code = json.optInt("code"),
-                        device = json.optString("device"),
-                        firstTime = json.optBoolean("firstTime"),
-                        auto = json.optBoolean("auto"),
+                        code = event.code.toInt(),
+                        device = event.device,
+                        firstTime = event.firstTime,
+                        auto = event.auto,
                     ),
                 )
             }
-            "connected" -> {
+            is MobileEvent.Connected -> {
                 lowBatteryAlertSent = false
                 lastTemperatureCode = 0
-                val name = json.optString("name").ifBlank { "Osmo 相机" }
+                val name = event.name.ifBlank { "Osmo 相机" }
                 val recent = record("已连接 $name")
                 update {
                     defaultGpsPending = true
@@ -282,17 +271,17 @@ object OsmoRepository : BridgeListener {
                         connecting = false,
                         pairing = null,
                         devices = emptyList(),
-                        deviceName = json.optString("name"),
-                        modelName = json.optString("modelName"),
-                        modes = parseModes(json),
+                        deviceName = event.name,
+                        modelName = event.model,
+                        modes = event.modes.map { mode -> ModeItem(mode.code.toInt(), mode.name) },
                         recentEvents = recent,
                         message = null,
                     )
                 }
             }
-            "connectFailed" -> {
-                val detail = json.optString("message")
-                val auto = json.optBoolean("auto")
+            is MobileEvent.ConnectFailed -> {
+                val detail = event.message
+                val auto = event.auto
                 // Auto-connect misses on every scan when no paired camera is
                 // nearby; only user-initiated failures belong in the feed.
                 val recent = if (auto) null else record("连接失败：${detail.ifBlank { "未知原因" }}")
@@ -309,8 +298,8 @@ object OsmoRepository : BridgeListener {
                     )
                 }
             }
-            "status" -> {
-                val status = parseStatus(json)
+            is MobileEvent.Status -> {
+                val status = event.status.toCameraStatus()
                 val previous = _state.value.status
                 val lines = buildList {
                     if (previous.hasData && previous.modeCode != status.modeCode) {
@@ -333,21 +322,22 @@ object OsmoRepository : BridgeListener {
                 checkLowBattery(status.battery)
                 checkTemperature(status.temperatureCode)
             }
-            "modeInfo" -> update {
-                val info = listOf(json.optString("name"), json.optString("parameters"))
+            is MobileEvent.ModeInfo -> update {
+                val info = listOf(event.name, event.parameters)
                     .filter { value -> value.isNotBlank() }
                     .joinToString(" · ")
                 it.copy(modeInfo = info.ifBlank { null })
             }
-            "version" -> {
-                val product = json.optString("product")
-                val details = json.optString("details")
+            is MobileEvent.Version -> {
+                val product = event.product
+                val details = event.details
                 val text = listOf(product, details).filter { value -> value.isNotBlank() }
                 update { it.copy(version = text.joinToString(" · ").ifBlank { null }) }
             }
-            "command" -> {
-                val action = json.optString("action")
-                val ok = json.optBoolean("ok")
+            is MobileEvent.Command -> {
+                val action = event.action
+                val eventError = event.error.orEmpty()
+                val ok = event.error == null
                 val label = commandLabel(action)
                 val event = when {
                     ok && action == "record.start" -> "开始录像"
@@ -371,24 +361,25 @@ object OsmoRepository : BridgeListener {
                         message = if (ok) {
                             null
                         } else {
-                            json.optString("error").ifBlank { "操作失败：$label" }
+                            eventError.ifBlank { "操作失败：$label" }
                         },
                     )
                 }
             }
-            "warning", "error", "gpsError" ->
-                update { it.copy(message = json.optString("message")) }
-            "reconnecting" -> {
-                val attempt = json.optInt("attempt")
+            is MobileEvent.Warning -> update { it.copy(message = event.message) }
+            is MobileEvent.GpsError -> update { it.copy(message = event.message) }
+            is MobileEvent.ScanFailed -> update { it.copy(scanning = false, message = event.message) }
+            is MobileEvent.Reconnecting -> {
+                val attempt = event.attempt.toInt()
                 val text = "连接中断，正在重连（第 $attempt 次）"
                 val recent = record(text)
                 update { it.copy(reconnectAttempt = attempt, message = text, recentEvents = recent) }
             }
-            "reconnected" -> {
+            MobileEvent.Reconnected -> {
                 val recent = record("已重新连接")
                 update { it.copy(reconnectAttempt = null, message = "已重新连接", recentEvents = recent) }
             }
-            "disconnected" -> {
+            is MobileEvent.Disconnected -> {
                 lowBatteryAlertSent = false
                 lastTemperatureCode = 0
                 stopGpsInternal()
@@ -410,7 +401,6 @@ object OsmoRepository : BridgeListener {
                     )
                 }
             }
-            "gps" -> Unit
         }
     }
 
@@ -466,47 +456,21 @@ object OsmoRepository : BridgeListener {
         else -> action
     }
 
-    private fun parseModes(json: JSONObject): List<ModeItem> {
-        val array = json.optJSONArray("modes") ?: return emptyList()
-        return buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                add(ModeItem(code = item.optInt("code"), name = item.optString("name")))
-            }
-        }
-    }
-
-    private fun parseDevices(json: JSONObject): List<DeviceItem> {
-        val array = json.optJSONArray("devices") ?: return emptyList()
-        return buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                add(
-                    DeviceItem(
-                        id = item.optString("id"),
-                        name = item.optString("name"),
-                        rssi = if (item.isNull("rssi")) null else item.optInt("rssi"),
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun parseStatus(json: JSONObject) = CameraStatus(
-        modeCode = json.optInt("modeCode", -1),
-        modeName = json.optString("modeName"),
-        stateName = json.optString("stateName"),
-        capturing = json.optBoolean("capturing"),
-        resolution = json.optString("resolution"),
-        fps = json.optString("fps"),
-        eis = json.optString("eis"),
-        recordSeconds = json.optInt("recordSeconds"),
-        remainingMb = json.optInt("remainingMb"),
-        remainingPhotos = json.optInt("remainingPhotos"),
-        remainingSeconds = json.optInt("remainingSeconds"),
-        battery = json.optInt("battery"),
-        temperatureCode = json.optInt("temperatureCode"),
-        temperatureName = json.optString("temperatureName"),
+    private fun MobileStatus.toCameraStatus() = CameraStatus(
+        modeCode = modeCode.toInt(),
+        modeName = modeName,
+        stateName = stateName,
+        capturing = capturing,
+        resolution = resolution,
+        fps = fps,
+        eis = eis,
+        recordSeconds = recordSeconds.toInt(),
+        remainingMb = remainingMb.toInt(),
+        remainingPhotos = remainingPhotos.toInt(),
+        remainingSeconds = remainingSeconds.toInt(),
+        battery = battery.toInt(),
+        temperatureCode = temperatureCode.toInt(),
+        temperatureName = temperatureName,
         hasData = true,
     )
 }

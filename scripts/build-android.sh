@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds libosmo_bridge.so into android/app/src/main/jniLibs.
+# Builds the native library and generates its Kotlin bindings.
 # Used by Gradle's buildRust task and by CI/CLI builds.
 set -euo pipefail
 
@@ -20,8 +20,16 @@ fi
 
 export ANDROID_NDK_HOME="$NDK"
 cd "$ROOT"
+abi="${ABI:-arm64-v8a}"
+jni_root="$ROOT/android/app/src/main/jniLibs"
+bindings="${1:-$ROOT/android/app/build/generated/osmo-bindings}"
 cargo ndk \
-  -t "${ABI:-arm64-v8a}" \
+  -t "$abi" \
   -P "${API_LEVEL:-29}" \
-  -o "$ROOT/android/app/src/main/jniLibs" \
-  build --release -p android-bridge
+  -o "$jni_root" \
+  build --locked --release -p mobile-bridge
+
+# Remove the obsolete library from upgrades of existing checkouts.
+rm -f "$jni_root/$abi/libosmo_bridge.so"
+cargo run --locked -p mobile-bridge --features bindgen --bin osmo-bindgen -- \
+  generate --library "$jni_root/$abi/libosmo_mobile.so" --language kotlin --no-format --out-dir "$bindings"

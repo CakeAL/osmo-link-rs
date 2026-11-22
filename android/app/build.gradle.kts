@@ -15,6 +15,10 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1"
+        ndk {
+            // JNA also ships ABIs for which this build has no Rust library.
+            abiFilters += providers.environmentVariable("ABI").orElse("arm64-v8a").get()
+        }
     }
 
     buildTypes {
@@ -37,30 +41,46 @@ android {
 
 // The BLE stack is Rust. Gradle rebuilds the shared library before packaging,
 // so `assembleDebug` alone produces a complete APK. Use `-PskipRust=true` to
-// reuse an existing jniLibs output while iterating on Kotlin only.
+// reuse existing bindings and JNI libraries while iterating on Kotlin only.
 // The script keeps NDK/cargo-ndk discovery out of the Gradle configuration
 // cache, which cannot serialize build-script closures.
 val repoRoot: File = rootProject.projectDir.parentFile
 val skipRust = providers.gradleProperty("skipRust").orNull?.toBoolean() == true
 
-val buildRust = tasks.register<Exec>("buildRust") {
+abstract class BuildOsmoRust : Exec() {
+    @get:OutputDirectory
+    abstract val bindingsDirectory: DirectoryProperty
+}
+
+val buildRust = tasks.register<BuildOsmoRust>("buildRust") {
     group = "build"
-    description = "Builds libosmo_bridge.so for Android with cargo-ndk"
+    description = "Builds the Rust library and generates Kotlin bindings"
     enabled = !skipRust
     workingDir = repoRoot
-    commandLine("bash", File(repoRoot, "scripts/build-android.sh").absolutePath)
+    bindingsDirectory.set(layout.buildDirectory.dir("generated/osmo-bindings"))
+    // Cargo owns the native library's incremental build.
+    outputs.upToDateWhen { false }
+    commandLine(
+        "bash",
+        File(repoRoot, "scripts/build-android.sh").absolutePath,
+        bindingsDirectory.get().asFile.absolutePath,
+    )
 }
 
 tasks.named("preBuild").configure { dependsOn(buildRust) }
+androidComponents.onVariants { variant ->
+    variant.sources.kotlin?.addGeneratedSourceDirectory(buildRust, BuildOsmoRust::bindingsDirectory)
+}
 
 // `preBuild` is not an input of AGP's native merge tasks, so a parallel build
 // can package jniLibs before cargo-ndk finishes. Make the dependency explicit;
-// otherwise an APK can silently contain the previous libosmo_bridge.so.
+// otherwise an APK can silently contain an outdated native library.
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }
     .configureEach { dependsOn(buildRust) }
 
 dependencies {
     implementation(project(":btleplug-jni"))
+    implementation(libs.jna) { artifact { type = "aar" } }
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

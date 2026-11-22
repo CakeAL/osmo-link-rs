@@ -7,6 +7,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import com.cakeal.osmolink.ffi.scanFailed
 
 internal class CameraScan(private val context: Context) {
     // Callbacks are delivered on the main thread while Rust starts and stops the scan.
@@ -32,7 +33,7 @@ internal class CameraScan(private val context: Context) {
 
                     override fun onScanFailed(errorCode: Int) {
                         synchronized(this@CameraScan) {
-                            if (active?.second === this) OsmoNative.nativeScanFailed(errorCode)
+                            if (active?.second === this) scanFailed(errorCode)
                         }
                     }
                 }

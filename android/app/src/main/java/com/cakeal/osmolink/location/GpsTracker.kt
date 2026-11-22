@@ -9,12 +9,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import org.json.JSONObject
+import com.cakeal.osmolink.ffi.LocationSample
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Feeds `GpsSample` JSON to the rust bridge at the system's best-effort rate
+ * Feeds typed location samples to the rust bridge at the system's best-effort rate
  * (requested 100ms). Android does not guarantee 10Hz; the UI shows the rate
  * actually received instead of assuming it.
  *
@@ -24,7 +24,7 @@ import kotlin.math.sin
  */
 class GpsTracker(
     context: Context,
-    private val onFix: (sampleJson: String, accuracyMeters: Double, satellites: Int) -> Unit,
+    private val onFix: (LocationSample) -> Unit,
 ) {
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     private var running = false
@@ -104,25 +104,20 @@ class GpsTracker(
         if (satellites <= 0) return
         val speed = if (location.hasSpeed()) location.speed.toDouble() else 0.0
         val bearing = if (location.hasBearing()) Math.toRadians(location.bearing.toDouble()) else 0.0
-        val sample = JSONObject().apply {
-            put("timestamp_ms", location.time)
-            put("longitude", location.longitude)
-            put("latitude", location.latitude)
-            put("altitude_m", if (location.hasAltitude()) location.altitude else 0.0)
-            put("north_mps", speed * cos(bearing))
-            put("east_mps", speed * sin(bearing))
-            put("down_mps", 0.0)
-            put(
-                "vertical_accuracy_m",
-                if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters.toDouble() else 0.0,
-            )
-            put("horizontal_accuracy_m", location.accuracy.toDouble())
-            put(
-                "speed_accuracy_mps",
-                if (location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond.toDouble() else 0.0,
-            )
-            put("satellites", satellites)
-        }
-        onFix(sample.toString(), location.accuracy.toDouble(), satellites)
+        onFix(
+            LocationSample(
+                timestampMs = location.time,
+                longitude = location.longitude,
+                latitude = location.latitude,
+                altitudeM = if (location.hasAltitude()) location.altitude else 0.0,
+                northMps = speed * cos(bearing),
+                eastMps = speed * sin(bearing),
+                downMps = 0.0,
+                verticalAccuracyM = if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters.toDouble() else 0.0,
+                horizontalAccuracyM = location.accuracy.toDouble(),
+                speedAccuracyMps = if (location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond.toDouble() else 0.0,
+                satellites = satellites.toUInt(),
+            ),
+        )
     }
 }

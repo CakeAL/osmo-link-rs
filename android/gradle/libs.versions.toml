@@ -10,6 +10,7 @@ composeBom = "2026.02.01"
 decompose = "3.5.0"
 
 [libraries]
+jna = { group = "net.java.dev.jna", name = "jna", version = "5.18.1" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
