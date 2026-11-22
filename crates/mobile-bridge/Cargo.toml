@@ -1,0 +1,28 @@
+[package]
+name = "mobile-bridge"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "osmo_mobile"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "osmo-bindgen"
+path = "src/bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+osmo-core.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio.workspace = true
+uniffi = "0.31"
+
+[target.'cfg(target_os = "android")'.dependencies]
+btleplug = "0.13.5"
+jni = "0.22"

@@ -1,0 +1,7 @@
+[bindings.kotlin]
+package_name = "com.cakeal.osmolink.ffi"
+cdylib_name = "osmo_mobile"
+
+[bindings.swift]
+module_name = "OsmoMobile"
+ffi_module_name = "OsmoMobileFFI"
