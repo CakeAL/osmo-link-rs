@@ -622,3 +622,16 @@ Android uses the app's foreground low-latency scanner and forwards DJI
 advertisements to the btleplug adapter for device creation and connections.
 The shared scanner keeps the DJI manufacturer-data check. Real camera
 discovery and connection timings still need device testing.
+
+## Mobile: share the session through UniFFI
+
+Android and iOS now use one `mobile-bridge` crate for discovery, pairing history,
+camera modes and session state. UniFFI generates Swift and Kotlin bindings during
+the app builds. Both apps exchange typed events, status snapshots and location
+samples. The Android-only JNI entry points initialize btleplug and accept
+the platform's ScanResult instances for the foreground low-latency scan.
+
+The previous Android bridge, iOS bridge and mobile-status crates were removed.
+The shared crate still reads the existing controller.json file and its
+last-camera selection. Real camera behavior after the migration remains
+unverified.

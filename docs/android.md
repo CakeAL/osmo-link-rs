@@ -1,6 +1,6 @@
 # Android 应用
 
-原生 Kotlin + Jetpack Compose 遥控界面，通过 JNI 调用同一个 `osmo-core`。
+原生 Kotlin + Jetpack Compose 遥控界面，通过 UniFFI 绑定调用共享的 Rust 会话。
 未连接时显示相机扫描页，连接后显示遥控台。两处均可打开设置。
 界面使用 Material 3，默认跟随系统明暗和壁纸配色（Android 12+）。
 设置可选择暗色或浅色、输入六位 RGB 色值或恢复默认配色。
@@ -22,7 +22,7 @@
 
 | 位置 | 作用 |
 | --- | --- |
-| [crates/android-bridge](../crates/android-bridge) | JNI cdylib（`libosmo_bridge.so`）：扫描、连接、命令、事件、GPS |
+| [crates/mobile-bridge](../crates/mobile-bridge) | 移动端共用的 UniFFI 接口、连接会话、事件、GPS 和机型模式目录 |
 | [android/app](../android/app) | Compose UI、权限、前台服务；状态在 `OsmoRepository`，GPS 在 `GpsTracker` |
 | [OsmoRepository.kt](../android/app/src/main/java/com/cakeal/osmolink/data/OsmoRepository.kt) | 进程级状态、GPS、前台服务启停 |
 | [CameraScan.kt](../android/app/src/main/java/com/cakeal/osmolink/bridge/CameraScan.kt) | 前台低延迟扫描，把 DJI 广播交给 Rust 后端 |
@@ -30,13 +30,10 @@
 | [android/btleplug-jni](../android/btleplug-jni) | 内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR） |
 | [scripts/build-android.sh](../scripts/build-android.sh) | cargo-ndk 构建脚本，被 Gradle `preBuild` 调用 |
 
-数据流：Kotlin `OsmoNative` 调 JNI → Rust 在 Tokio runtime 上操作相机 →
-`BridgeListener.onEvent(type, json)` 回到 Kotlin → `OsmoRepository` 合并成
-`StateFlow<UiState>` → Compose 与通知渲染。所有命令立即返回，结果以事件形式回来。
-
-事件类型：`devices`、`pairing`、`connected`、`connectFailed`、`status`、
-`modeInfo`、`version`、`command`、`warning`、`error`、`gpsError`、`reconnecting`、
-`reconnected`、`disconnected`。`connected` 同时携带按相机协议 ID 生成的模式目录。
+Kotlin 调用 UniFFI 生成的接口，Rust 在 Tokio runtime 上操作相机。状态、模式列表和
+操作结果通过 `MobileListener.onEvent(event: MobileEvent)` 返回，由 `OsmoRepository`
+更新 `StateFlow<UiState>`。JNI 负责初始化 btleplug，以及接收 Android 扫描回调中的
+`ScanResult` 对象。
 
 ## 构建
 
@@ -49,9 +46,9 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-Gradle 在 `preBuild` 执行 `scripts/build-android.sh`，把
-`libosmo_bridge.so` 产出到 `app/src/main/jniLibs/arm64-v8a/`，随后正常打包。
-只改 Kotlin 时可跳过 Rust：
+Gradle 执行 `scripts/build-android.sh`，把 `libosmo_mobile.so` 输出到
+`app/src/main/jniLibs/arm64-v8a/`，把绑定生成到 `app/build/generated/osmo-bindings/`。
+已有原生库和绑定、只改 Kotlin 时可跳过 Rust：
 
 ```sh
 ./gradlew :app:assembleDebug -PskipRust=true
@@ -119,14 +116,14 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 - 扫描：API 31+ 需要 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；旧版本需要定位权限。
   本应用始终同时请求定位，因为 GPS 注入本身需要它。
 - **不要预检 adapter 状态**：btleplug 的 Android 后端把 `adapter_state()` 固定返回
-  `Unknown`，预检会把所有设备误判为不可用。现在直接调用 `start_scan`，并由它把
-  「蓝牙未开」「权限被拒」映射成明确错误。
+  `Unknown`，预检会把所有设备误判为不可用。由 Android 前台扫描器报告
+  「蓝牙未开」或「权限被拒」的错误。
 - 低电量提醒使用 `VIBRATE`（普通权限，无需运行时申请）和独立的高优先级通知渠道
   `osmo_link_battery`；通知权限被拒绝时仍会震动，只是不显示通知。
-- `btleplug::platform::init` 必须在 Java 线程调用，因此放在 `nativeInit` 中。
+- `btleplug::platform::init` 必须在 Java 线程调用，因此放在 `nativeBluetoothInit` 中。
 - JNI crate 必须与 btleplug 使用同一个 jni 0.22；JNI 符号与 Kotlin `external fun` 一一对应。
 - release 开 R8：`src/main/keepRules/rules.keep` 保留 `com.nonpolynomial.**`、
-  `io.github.gedgygedgy.**`、`OsmoNative` 和 `BridgeListener` 实现。
+  `io.github.gedgygedgy.**`、`OsmoNative` 和 UniFFI 生成的 JNA 回调。
 - `btleplug` 的 Android 后端要求 minSdk ≥ 24；本工程 minSdk 29。
 
 ## 已验证与未验证

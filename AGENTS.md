@@ -10,9 +10,7 @@
 - 一个 Cargo workspace（resolver 3，edition 2024）：
   - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无平台专属业务代码。**
   - `macos-cli`（[crates/macos-cli](crates/macos-cli)）：命令行外壳、配对身份持久化、GPS 回放。
-  - `android-bridge`（[crates/android-bridge](crates/android-bridge)）：JNI cdylib，向 Kotlin 暴露异步 JSON 事件。
-  - `ios-bridge`（[ios/Bridge](ios/Bridge)）：Rust 静态库，经 C ABI 向 SwiftUI 提供异步 JSON 事件。
-  - `mobile-status`（[crates/mobile-status](crates/mobile-status)）：两端共用的状态 JSON 投影和模式目录。
+  - `mobile-bridge`（[crates/mobile-bridge](crates/mobile-bridge)）：Android 与 iOS 共用的连接会话、配对记录、模式目录及 UniFFI 接口。
   - `osmo_gps_extract_gpx`（[crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx)）：独立 MP4 → GPX 工具，不在手机上运行。
 - `android/`（[android](android)）是独立 Gradle 工程：`:app`（Compose HUD）、
   `:btleplug-jni`（内置的 btleplug Java 支持类）。原生库由 cargo-ndk 构建。
@@ -30,7 +28,7 @@ cargo fmt --all                        # 格式化（无 rustfmt.toml，用默�
 cargo test --workspace                 # 40 个单元测试，全部离线
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check -p osmo-core --target aarch64-apple-ios
-cargo check -p android-bridge --target aarch64-linux-android
+cargo check -p mobile-bridge --target aarch64-linux-android
 
 cd android && ./gradlew :app:assembleDebug   # 先构建 Rust，再打包 APK
 cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
@@ -51,8 +49,9 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 | [gps.rs](crates/osmo-core/src/gps.rs) | `GpsSample` 校验与 48 字节编码、UTC+8 转换 |
 | [error.rs](crates/osmo-core/src/error.rs) | `Error`/`Result` |
 | [macos-cli/src/main.rs](crates/macos-cli/src/main.rs) | 命令解析、事件循环、`controller.json`、JSONL 回放 |
-| [android-bridge/src/lib.rs](crates/android-bridge/src/lib.rs) | JNI 入口、JVM 回调、扫描/连接/命令/GPS 转发 |
-| [mobile-status/src/lib.rs](crates/mobile-status/src/lib.rs) | `CameraStatus` 的 JSON 投影与模式目录 |
+| [mobile-bridge/src/lib.rs](crates/mobile-bridge/src/lib.rs) | 两端共用的扫描、连接、命令和 GPS 生命周期 |
+| [mobile-bridge/src/events.rs](crates/mobile-bridge/src/events.rs) 与 [status.rs](crates/mobile-bridge/src/status.rs) | UniFFI 事件、状态和模式目录 |
+| [mobile-bridge/src/android.rs](crates/mobile-bridge/src/android.rs) | btleplug 初始化与 Android `ScanResult` JNI 入口 |
 | [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、`OsmoRepository`、前台服务、权限、`GpsTracker` |
 | [ios/App](ios/App)、[ios/RecordingWidget](ios/RecordingWidget) | SwiftUI 遥控、应用级连接状态、ActivityKit 与灵动岛 |
 | [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) | MP4 `djmd` 轨 GPS 提取 → GPX（`gpx` + `prost`） |
@@ -61,7 +60,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 
 任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；视频 GPS → `osmo_gps_extract_gpx`；命令语义与重连 →
 `camera.rs`；状态字段含义 → `status.rs` + `enums.rs`；定位编码 → `gps.rs`；CLI 交互 →
-`macos-cli/src/main.rs`；Android 界面 → `android/app`；JNI 接口 → `android-bridge`。
+`macos-cli/src/main.rs`；Android 界面 → `android/app`；移动端 Rust 接口 → `mobile-bridge`。
 
 ## 架构约束
 
@@ -156,17 +155,16 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
   namespace/applicationId 为 `com.cakeal.osmolink`。
 - 模块：`:app`（UI/ViewModel/GPS/权限）、`:btleplug-jni`（上游 Java 类，**不要修改**，
   升级时随 btleplug 版本整体替换）。
-- 原生库：`crates/android-bridge` 生成 `libosmo_bridge.so`；Gradle `preBuild` 调
+- 原生库：`crates/mobile-bridge` 生成 `libosmo_mobile.so` 和 Kotlin 绑定；Gradle 调
   [scripts/build-android.sh](scripts/build-android.sh)。NDK 默认 `.tools/android-ndk`，
   可用 `ANDROID_NDK_HOME` 覆盖；`-PskipRust=true` 跳过 Rust。
 - JNI 约定：Kotlin [OsmoNative.kt](android/app/src/main/java/com/cakeal/osmolink/bridge/OsmoNative.kt)
   的 `external fun` 必须与 `Java_com_cakeal_osmolink_bridge_OsmoNative_*` 一一对应；
   `jni` crate 版本必须与 btleplug 一致（0.22），否则 `Env` 类型不兼容。
-- `btleplug::platform::init` 必须在 Java 线程调用（现位于 `nativeInit`）；
+- `btleplug::platform::init` 必须在 Java 线程调用（位于 `nativeBluetoothInit`）；
   它依赖内置的 `com.nonpolynomial.**` 与 `io.github.gedgygedgy.**` 类。
-- 事件协议：`onEvent(type, json)`。新增事件类型时同步 `OsmoRepository.onEvent`，
-  未识别类型会被静默忽略。
-- release 启用 R8，`app/src/main/keepRules/rules.keep` 负责保留 btleplug 与 JNI 类；
+- 事件接口：UniFFI `MobileListener.onEvent(MobileEvent)`。新增事件类型时同步 Kotlin 和 Swift 的事件处理。
+- release 启用 R8，`app/src/main/keepRules/rules.keep` 负责保留 btleplug、JNI 和 UniFFI 生成的 JNA 回调；
   新增 JNI 类或回调接口时同步更新该文件。
 - 状态与 GPS 属于 `OsmoRepository`（`data/`），不要搬回 ViewModel，否则退出界面会断连。
 - `OsmoService` 在 `connected || gpsEnabled` 时前台运行；通知文案由纯函数
@@ -177,7 +175,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
   旧系统或用户关闭提升时退回 compat 通知，不要假定一定会上岛/胶囊。
 - 模拟器没有可用 BLE 适配器，只能验证 UI 与错误路径；扫描/配对/录制必须真机验证。
 - 不要依赖 `Central::adapter_state()`：btleplug 的 Android 后端固定返回 `Unknown`，
-  扫描前必须跳过该检查，让 `start_scan` 报告蓝牙关闭/权限错误。
+  由 Android 前台扫描器报告蓝牙关闭或权限错误。
 
 ## 提交与完成标准
 

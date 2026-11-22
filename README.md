@@ -198,9 +198,9 @@ CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举�
 
 ## Android
 
-原生 Compose 应用位于 [android](android)，Rust core 以 JNI 共享库接入：
+原生 Compose 应用位于 [android](android)，通过 UniFFI 生成的 Kotlin 绑定接入 Rust：
 
-- `crates/android-bridge`：JNI 层（cdylib `libosmo_bridge.so`），扫描、连接、命令与事件。
+- [`crates/mobile-bridge`](crates/mobile-bridge)：两端共用的连接会话、配对记录、模式目录和类型化事件。Android 打包 `libosmo_mobile.so`，系统蓝牙扫描结果由 JNI 交给 Rust。
 - `android/app`：Kotlin Material You 遥控界面，含权限管理、配对、GPS 注入与前台服务。
 - `android/btleplug-jni`：内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR）。
 
@@ -212,8 +212,8 @@ cargo install cargo-ndk
 cd android && ./gradlew :app:assembleDebug
 ```
 
-Gradle 在 `preBuild` 调用 `scripts/build-android.sh` 生成原生库；
-`-PskipRust=true` 可只编译 Kotlin。NDK 默认查找 `.tools/android-ndk`，
+Gradle 调用 `scripts/build-android.sh` 生成原生库和 Kotlin 绑定；
+已有两项构建产物时，可以用 `-PskipRust=true` 只编译 Kotlin。NDK 默认查找 `.tools/android-ndk`，
 也可用 `ANDROID_NDK_HOME` 指定。
 
 首次运行授予「附近设备/位置」权限，唤醒相机并开启无线连接后搜索；
@@ -237,7 +237,7 @@ Android 首次配对需在相机屏幕确认配对码 `2333`。前台使用低�
 录制时在支持的 Android 16+ 设备上申请 Live Update。旧系统、小米机型或无法提升时使用普通常驻通知。
 
 详细结构、约束与排错见 [Android 文档](docs/android.md)。
-JNI 层可用 `cargo check -p android-bridge --target aarch64-linux-android` 检查。
+移动端 Rust 层可用 `cargo check -p mobile-bridge --target aarch64-linux-android` 检查。
 
 ## iOS
 
@@ -266,7 +266,7 @@ Core Location。相机页会明确提示当前卫星数只能注入 0。
 
 用 Xcode 26 或更新版本打开 [OsmoLink.xcodeproj](ios/OsmoLink.xcodeproj)，选择
 `OsmoLink` scheme。真机运行需为应用及 `RecordingWidget` 设置同一个签名团队。
-Xcode 构建阶段会编译并链接 `ios/Bridge` 的 Rust 静态库。
+Xcode 构建阶段会编译并链接 `mobile-bridge` 的 Rust 静态库，同时生成 Swift 绑定。
 
 ```sh
 rustup target add aarch64-apple-ios

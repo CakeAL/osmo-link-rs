@@ -12,19 +12,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "android-bridge"
-version = "0.1.0"
-dependencies = [
- "btleplug",
- "jni",
- "mobile-status",
- "osmo-core",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -550,17 +537,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ios-bridge"
-version = "0.1.0"
-dependencies = [
- "mobile-status",
- "osmo-core",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,14 +722,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "uniffi",
-]
-
-[[package]]
-name = "mobile-status"
-version = "0.1.0"
-dependencies = [
- "osmo-core",
- "serde_json",
 ]
 
 [[package]]

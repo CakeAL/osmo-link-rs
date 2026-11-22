@@ -73,3 +73,4 @@ ACK 完成；其他命令仍严格匹配，返回码单独校验。
 - `cargo check -p osmo-core --target aarch64-linux-android`：通过。
 
 移动端结果是 Rust core 的类型与依赖编译检查，未链接成原生 App，未做真机运行。
+- UniFFI 迁移后的 Android 和 iOS 真机扫描、配对、控制命令和 GPS 注入尚待验证。
