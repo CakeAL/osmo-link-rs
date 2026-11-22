@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -43,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +63,11 @@ import com.cakeal.osmolink.R
 import com.cakeal.osmolink.data.AppPreferences
 import com.cakeal.osmolink.data.BatteryAlertSettings
 import com.cakeal.osmolink.data.ThemeMode
+import com.cakeal.osmolink.data.UpdateCheckResult
+import com.cakeal.osmolink.data.checkForUpdate
+import java.io.IOException
+import kotlinx.coroutines.launch
+import org.json.JSONException
 
 private val RGB_HEX = Regex("[0-9A-Fa-f]{6}")
 
@@ -230,6 +237,7 @@ internal fun SettingsScreen(
         }
         SettingsGroup {
             SettingsRow("关于 Osmo Link", "版本 ${BuildConfig.VERSION_NAME}", onClick = onAbout)
+            UpdateCheckRow(onError)
         }
     }
 
@@ -261,6 +269,63 @@ internal fun SettingsScreen(
                 batteryDialog = false
             },
             onDismiss = { batteryDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun UpdateCheckRow(onError: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("通过 GitHub 检查") }
+    var release by remember { mutableStateOf<UpdateCheckResult.Available?>(null) }
+
+    val check: () -> Unit = check@{
+        if (checking) return@check
+        checking = true
+        scope.launch {
+            try {
+                status = when (val result = checkForUpdate(BuildConfig.VERSION_NAME)) {
+                    UpdateCheckResult.NoRelease -> "暂无正式发布版本"
+                    UpdateCheckResult.UpToDate -> "当前已是最新版"
+                    is UpdateCheckResult.Available -> {
+                        release = result
+                        "可更新至 ${result.tag}"
+                    }
+                }
+            } catch (_: IOException) {
+                status = "检查失败，请重试"
+            } catch (_: JSONException) {
+                status = "无法读取发布信息，请重试"
+            } finally {
+                checking = false
+            }
+        }
+    }
+    SettingsRow(
+        "检查更新",
+        if (checking) "正在检查…" else status,
+        onClick = check.takeUnless { checking },
+    )
+
+    release?.let { update ->
+        AlertDialog(
+            onDismissRequest = { release = null },
+            title = { Text("发现新版本 ${update.tag}") },
+            text = {
+                Text(
+                    update.notes.ifBlank { "此版本未提供更新说明。" },
+                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    release = null
+                    context.openScreen(Intent(Intent.ACTION_VIEW, Uri.parse(update.pageUrl)), onError)
+                }) { Text("前往 GitHub") }
+            },
+            dismissButton = { TextButton(onClick = { release = null }) { Text("稍后") } },
         )
     }
 }

@@ -1,5 +1,12 @@
 import SwiftUI
 
+private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+private let appVersionLabel = appVersion.map { version in
+    // Keep the three-component bundle version while matching the release tag in the app.
+    let shortVersion = version.hasSuffix(".0") ? String(version.dropLast(2)) : version
+    return "v\(shortVersion)"
+} ?? "—"
+
 struct SettingsView<Route: Hashable>: View {
     @AppStorage("appearance") private var appearance = Appearance.system
     @Environment(\.openURL) private var openURL
@@ -91,13 +98,90 @@ struct SettingsView<Route: Hashable>: View {
                 NavigationLink(value: about) {
                     Label("关于 Osmo Link", systemImage: "info.circle.fill")
                 }
+                UpdateCheckRow()
             } footer: {
-                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
+                Text("版本 \(appVersionLabel)")
             }
         }
         .scrollContentBackground(.hidden)
         .background(AppBackground())
         .navigationTitle("设置")
+    }
+}
+
+private struct UpdateCheckRow: View {
+    @Environment(\.openURL) private var openURL
+    @State private var checking = false
+    @State private var status = "通过 GitHub 检查"
+    @State private var release: GitHubRelease?
+
+    var body: some View {
+        Button {
+            checking = true
+        } label: {
+            HStack {
+                Label("检查更新", systemImage: "arrow.clockwise")
+                Spacer()
+                Text(checking ? "正在检查…" : status)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .disabled(checking)
+        .task(id: checking) {
+            if checking { await check() }
+        }
+        .sheet(item: $release) { update in
+            VStack(alignment: .leading, spacing: 16) {
+                Text("发现新版本 \(update.tag)")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+                ScrollView {
+                    let notes = update.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    Text(verbatim: notes.isEmpty ? "此版本未提供更新说明。" : notes)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                Button {
+                    release = nil
+                    openURL(update.pageURL)
+                } label: {
+                    Text("前往 GitHub").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
+                    release = nil
+                } label: {
+                    Text("稍后").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(24)
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func check() async {
+        defer { checking = false }
+        guard let appVersion else {
+            status = "无法读取当前版本"
+            return
+        }
+        do {
+            let result = try await GitHubRelease.check(installedVersion: appVersion)
+            try Task.checkCancellation()
+            switch result {
+            case .noRelease:
+                status = "暂无正式发布版本"
+            case .upToDate:
+                status = "当前已是最新版"
+            case .available(let update):
+                release = update
+                status = "可更新至 \(update.tag)"
+            }
+        } catch {
+            if !Task.isCancelled { status = "检查失败，请重试" }
+        }
     }
 }
 
@@ -132,7 +216,7 @@ struct AboutView: View {
         VStack(spacing: 5) {
             Text("Osmo Link")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
-            Text("版本 \(version) · \(build)")
+            Text("版本 \(appVersionLabel) · \(build)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -178,7 +262,7 @@ struct AboutView: View {
                 CardHeader("应用信息", systemImage: "info.circle.fill")
                 VStack(spacing: 11) {
                     InfoRow(label: "应用", value: "Osmo Link", systemImage: "app")
-                    InfoRow(label: "版本", value: "\(version) (\(build))", systemImage: "number")
+                    InfoRow(label: "版本", value: "\(appVersionLabel) (\(build))", systemImage: "number")
                     InfoRow(label: "开源许可", value: "AGPL-3.0 及第三方许可", systemImage: "doc.text")
                 }
                 Divider().opacity(0.5)
@@ -188,10 +272,6 @@ struct AboutView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
 
     private var build: String {

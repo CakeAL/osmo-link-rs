@@ -20,6 +20,7 @@
 		05A01000000000000000004C /* RecordingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000005 /* RecordingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		05A01000000000000000004D /* LocationInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000071 /* LocationInjector.swift */; };
 		05A01000000000000000004E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000072 /* Theme.swift */; };
+		05A01000000000000000004F /* GitHubRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A010000000000000000073 /* GitHubRelease.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 		05A01000000000000000002E /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
 		05A010000000000000000071 /* LocationInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationInjector.swift; sourceTree = "<group>"; };
 		05A010000000000000000072 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		05A010000000000000000073 /* GitHubRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubRelease.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +73,7 @@
 			children = (
 				05A010000000000000000021 /* CameraModels.swift */,
 				05A010000000000000000022 /* CameraView.swift */,
+				05A010000000000000000073 /* GitHubRelease.swift */,
 				05A010000000000000000071 /* LocationInjector.swift */,
 				05A010000000000000000023 /* OsmoLinkApp.swift */,
 				05A010000000000000000024 /* RecordingActivity.swift */,
@@ -159,6 +162,7 @@
 			files = (
 				05A010000000000000000041 /* CameraModels.swift in Sources */,
 				05A010000000000000000042 /* CameraView.swift in Sources */,
+				05A01000000000000000004F /* GitHubRelease.swift in Sources */,
 				05A010000000000000000043 /* OsmoLinkApp.swift in Sources */,
 				05A010000000000000000044 /* RecordingActivity.swift in Sources */,
 				05A01000000000000000004D /* LocationInjector.swift in Sources */,

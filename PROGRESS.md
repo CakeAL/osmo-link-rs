@@ -601,3 +601,11 @@ Android unit tests cover `TemperatureAlertNotifier.shouldAlert`/copy and
 `:app:assembleDebug -PskipRust=true` passed. The iOS simulator build passed with
 `xcodebuild … -destination 'platform=iOS Simulator,name=iPhone 18 Pro'`.
 Mobile hardware behaviour is still unverified on a device.
+
+## Mobile: manual GitHub release checks
+
+Both settings screens now fetch the latest published stable GitHub Release on
+demand, compare numeric tag components, and show the release notes with a
+button that opens the release page. No release, up-to-date and request errors
+have separate feedback. Both apps show `v0.1`. Android uses that string as its
+version name, and iOS keeps the three-component bundle version `0.1.0`.

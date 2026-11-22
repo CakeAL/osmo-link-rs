@@ -287,6 +287,12 @@ ditto ios/build/DerivedData/Build/Products/Release-iphoneos/OsmoLink.app \
 
 Intel 模拟器构建使用 `x86_64-apple-ios` target。蓝牙配对、拍摄及灵动岛实机表现待验证。
 
+## 检查 App 更新
+
+Android 和 iOS 的设置页均可手动「检查更新」。发现较新的正式版本时会显示版本号和更新说明；
+点击「前往 GitHub」即可打开对应的 Release 页面。两端当前显示为 `v0.1`。
+发布时使用 `vX.Y` 或 `vX.Y.Z` 标签，检查时按数字比较，省略的补丁号按 `0` 处理。
+
 ## 视频 GPS 提取
 
 [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) 从 Action 4/5/6 的 MP4
