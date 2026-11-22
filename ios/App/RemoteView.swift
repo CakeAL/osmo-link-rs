@@ -256,7 +256,8 @@ struct RemoteView: View {
                 GlassCard {
                     EmptyDevicesView(hasSearched: remote.hasSearched)
                 }
-            } else {
+            }
+            if remote.phase != .connecting && !remote.devices.isEmpty {
                 VStack(spacing: 10) {
                     ForEach(remote.devices) { device in
                         deviceRow(device)

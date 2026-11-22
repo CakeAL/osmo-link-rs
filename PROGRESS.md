@@ -609,3 +609,16 @@ demand, compare numeric tag components, and show the release notes with a
 button that opens the release page. No release, up-to-date and request errors
 have separate feedback. Both apps show `v0.1`. Android uses that string as its
 version name, and iOS keeps the three-component bundle version `0.1.0`.
+
+## Mobile: live BLE discovery and early connection
+
+The mobile bridges now publish matching advertisements during the current scan
+and resolve selections by device ID. Both stop discovery before connecting
+after a manual selection or when the last paired camera appears. The existing
+scan limits still allow time to find other cameras, with an RSSI-ranked paired
+fallback if the last camera stays out of range.
+
+Android uses the app's foreground low-latency scanner and forwards DJI
+advertisements to the btleplug adapter for device creation and connections.
+The shared scanner keeps the DJI manufacturer-data check. Real camera
+discovery and connection timings still need device testing.

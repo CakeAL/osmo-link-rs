@@ -32,19 +32,34 @@ use osmo_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::sync::oneshot;
 
 use mobile_status::{error_message, mode_catalog, selectable_modes, status_json};
 
 struct BridgeState {
     devices: Vec<Device>,
     camera: Option<Arc<Camera>>,
-    scanning: bool,
+    scan: Option<LiveScan>,
+    connecting: bool,
+}
+
+struct LiveScan {
+    end: Option<oneshot::Sender<ScanEnd>>,
+    #[cfg(target_os = "android")]
+    scanner: Option<Arc<Scanner>>,
+}
+
+enum ScanEnd {
+    Connect(String),
+    #[cfg(target_os = "android")]
+    Failed(i32),
 }
 
 static STATE: Mutex<BridgeState> = Mutex::new(BridgeState {
     devices: Vec::new(),
     camera: None,
-    scanning: false,
+    scan: None,
+    connecting: false,
 });
 static VM: OnceLock<JavaVM> = OnceLock::new();
 static LISTENER: Mutex<Option<Arc<Global<JObject<'static>>>>> = Mutex::new(None);
@@ -258,92 +273,200 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScan<'lo
         let Some(runtime) = RUNTIME.get() else {
             return Ok(false);
         };
+        let Some(dir) = STATE_DIR.get() else {
+            return Ok(false);
+        };
+        let (end, selection) = oneshot::channel();
         {
             let Ok(mut state) = STATE.lock() else {
                 return Ok(false);
             };
-            if state.scanning || state.camera.is_some() {
+            if state.scan.is_some() || state.connecting || state.camera.is_some() {
                 return Ok(false);
             }
-            state.scanning = true;
+            state.scan = Some(LiveScan {
+                end: Some(end),
+                #[cfg(target_os = "android")]
+                scanner: None,
+            });
             state.devices.clear();
         }
-        let seconds = seconds.clamp(1, 60) as u64;
+        let duration = Duration::from_secs(seconds.clamp(1, 60) as u64);
         runtime.spawn(async move {
-            let inner = tokio::spawn(async move {
-                let scanner = Scanner::new().await?;
-                scanner.scan(Duration::from_secs(seconds)).await
-            });
-            let result = match inner.await {
-                Ok(result) => result,
-                Err(error) => {
-                    let message = if error.is_panic() {
-                        let payload = error.into_panic();
-                        payload
-                            .downcast_ref::<&str>()
-                            .map(|text| text.to_string())
-                            .or_else(|| payload.downcast_ref::<String>().cloned())
-                            .unwrap_or_else(|| "native task panicked".into())
-                    } else {
-                        "native task cancelled".into()
-                    };
-                    emit(
-                        "error",
-                        json!({ "message": format!("scan failed: {message}") }),
-                    );
-                    if let Ok(mut state) = STATE.lock() {
-                        state.scanning = false;
-                    }
-                    emit("devices", json!({ "devices": [] }));
-                    return;
-                }
-            };
+            let result = tokio::spawn(scan(duration, selection, dir, auto_connect)).await;
             match result {
-                Ok(devices) => {
-                    let list: Vec<Value> = devices
-                        .iter()
-                        .map(|device| {
-                            json!({
-                                "id": device.id,
-                                "name": device.name,
-                                "rssi": device.rssi,
-                            })
-                        })
-                        .collect();
-                    let reconnect = if auto_connect {
-                        STATE_DIR.get().and_then(|dir| {
-                            let saved = load_saved(dir);
-                            preferred_paired(
-                                devices.iter().map(|device| device.id.as_str()),
-                                &saved,
-                            )
-                            .map(|index| (devices[index].clone(), dir.clone(), saved))
-                        })
-                    } else {
-                        None
-                    };
-                    if let Ok(mut state) = STATE.lock() {
-                        state.scanning = false;
-                        state.devices = devices;
-                    }
-                    emit("devices", json!({ "devices": list }));
-                    // Publish the scan list before connecting so a failed
-                    // automatic attempt falls back to manual selection.
-                    if let Some((device, dir, saved)) = reconnect {
-                        start_connect(device, dir, saved, true);
-                    }
-                }
-                Err(error) => {
-                    if let Ok(mut state) = STATE.lock() {
-                        state.scanning = false;
-                    }
-                    // Always close the scan in the UI, even when discovery fails.
-                    emit("devices", json!({ "devices": [] }));
-                    emit("error", json!({ "message": error.to_string() }));
-                }
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => scan_failed(error),
+                Err(error) => scan_failed(error),
             }
         });
         Ok(true)
+    })
+}
+
+async fn scan(
+    duration: Duration,
+    mut selection: oneshot::Receiver<ScanEnd>,
+    dir: &Path,
+    auto_connect: bool,
+) -> osmo_core::Result<()> {
+    let saved = load_saved(dir);
+    let last = saved.last.as_deref().filter(|_| auto_connect);
+    let scanner = Scanner::new().await?;
+    #[cfg(target_os = "android")]
+    let scanner = {
+        let scanner = Arc::new(scanner);
+        if let Ok(mut state) = STATE.lock()
+            && let Some(scan) = &mut state.scan
+        {
+            scan.scanner = Some(scanner.clone());
+        }
+        scanner
+    };
+    let mut end = None;
+    let stop = async {
+        end = (&mut selection).await.ok();
+    };
+    let update = |devices: &[Device]| {
+        if devices
+            .iter()
+            .any(|device| Some(device.id.as_str()) == last)
+        {
+            return true;
+        }
+        if let Ok(mut state) = STATE.lock() {
+            state.devices = devices.to_vec();
+        }
+        publish_devices(devices, true, false);
+        false
+    };
+    #[cfg(target_os = "android")]
+    let devices = scanner
+        .scan_android_live(duration, stop, update, set_android_scanning)
+        .await?;
+    #[cfg(not(target_os = "android"))]
+    let devices = scanner.scan_live(duration, stop, update).await?;
+
+    let target = {
+        let mut state = STATE.lock().map_err(|_| Error::Disconnected)?;
+        // A selection queued as the deadline elapsed still takes priority.
+        state.scan = None;
+        let target = match end.or_else(|| selection.try_recv().ok()) {
+            Some(ScanEnd::Connect(id)) => devices
+                .iter()
+                .find(|device| device.id == id)
+                .map(|device| (device.clone(), false)),
+            #[cfg(target_os = "android")]
+            Some(ScanEnd::Failed(code)) => {
+                return Err(btleplug::Error::RuntimeError(format!(
+                    "Android BLE scan failed (code {code})"
+                ))
+                .into());
+            }
+            None if auto_connect => {
+                preferred_paired(devices.iter().map(|device| device.id.as_str()), &saved)
+                    .map(|index| (devices[index].clone(), true))
+            }
+            None => None,
+        };
+        state.connecting = target.is_some();
+        state.devices.clone_from(&devices);
+        target
+    };
+    publish_devices(&devices, false, target.is_some());
+    if let Some((device, auto)) = target {
+        start_connect(device, dir.to_path_buf(), saved, auto);
+    }
+    Ok(())
+}
+
+fn publish_devices(devices: &[Device], scanning: bool, connecting: bool) {
+    let list: Vec<_> = devices
+        .iter()
+        .map(|device| json!({ "id": device.id, "name": device.name, "rssi": device.rssi }))
+        .collect();
+    emit(
+        "devices",
+        json!({ "devices": list, "scanning": scanning, "connecting": connecting }),
+    );
+}
+
+fn scan_failed(error: impl std::fmt::Display) {
+    #[cfg(target_os = "android")]
+    if let Err(stop_error) = set_android_scanning(false) {
+        emit("warning", json!({ "message": stop_error.to_string() }));
+    }
+    let devices = match STATE.lock() {
+        Ok(mut state) => {
+            state.scan = None;
+            state.devices.clone()
+        }
+        Err(_) => Vec::new(),
+    };
+    publish_devices(&devices, false, false);
+    emit("error", json!({ "message": error.to_string() }));
+}
+
+#[cfg(target_os = "android")]
+fn set_android_scanning(enabled: bool) -> osmo_core::Result<()> {
+    let vm = VM.get().ok_or(Error::Disconnected)?;
+    let listener = LISTENER
+        .lock()
+        .ok()
+        .and_then(|listener| listener.as_ref().map(Arc::clone))
+        .ok_or(Error::Disconnected)?;
+    let error = vm
+        .attach_current_thread(|env| -> jni::errors::Result<Option<String>> {
+            let result = env
+                .call_method(
+                    listener.as_obj(),
+                    jni_str!("setBleScanning"),
+                    jni_sig!("(Z)Ljava/lang/String;"),
+                    &[JValue::Bool(enabled)],
+                )?
+                .l()?;
+            if result.is_null() {
+                return Ok(None);
+            }
+            let result = env.cast_local::<JString>(result)?;
+            read_string(env, &result).map(Some)
+        })
+        .map_err(|error| btleplug::Error::RuntimeError(error.to_string()))?;
+    match error {
+        Some(message) => Err(btleplug::Error::RuntimeError(message).into()),
+        None => Ok(()),
+    }
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScanResult<'local>(
+    mut unowned: EnvUnowned<'local>,
+    _this: JObject<'local>,
+    result: JObject<'local>,
+) -> jboolean {
+    run_bool(&mut unowned, |env| {
+        let scanner = STATE
+            .lock()
+            .ok()
+            .and_then(|state| state.scan.as_ref()?.scanner.clone());
+        Ok(scanner.is_some_and(|scanner| scanner.report_android_scan_result(env, result).is_ok()))
+    })
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScanFailed<'local>(
+    mut unowned: EnvUnowned<'local>,
+    _this: JObject<'local>,
+    code: jint,
+) -> jboolean {
+    run_bool(&mut unowned, |_env| {
+        Ok(STATE
+            .lock()
+            .ok()
+            .and_then(|mut state| state.scan.as_mut()?.end.take())
+            .is_some_and(|sender| sender.send(ScanEnd::Failed(code)).is_ok()))
     })
 }
 
@@ -351,35 +474,33 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeScan<'lo
 pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeConnect<'local>(
     mut unowned: EnvUnowned<'local>,
     _this: JObject<'local>,
-    index: jint,
+    id: JString<'local>,
 ) -> jboolean {
-    run_bool(&mut unowned, |_env| {
+    run_bool(&mut unowned, |env| {
         let Some(dir) = STATE_DIR.get() else {
             return Ok(false);
         };
-        if RUNTIME.get().is_none() {
-            return Ok(false);
-        }
+        let id = read_string(env, &id)?;
         let device = {
-            let Ok(state) = STATE.lock() else {
+            let Ok(mut state) = STATE.lock() else {
                 return Ok(false);
             };
-            if state.camera.is_some() || index < 0 {
+            if state.camera.is_some() || state.connecting {
                 return Ok(false);
             }
-            state.devices.get(index as usize).cloned()
+            let Some(device) = state.devices.iter().find(|device| device.id == id).cloned() else {
+                return Ok(false);
+            };
+            if let Some(scan) = &mut state.scan {
+                return Ok(scan
+                    .end
+                    .take()
+                    .is_some_and(|sender| sender.send(ScanEnd::Connect(id)).is_ok()));
+            }
+            state.connecting = true;
+            device
         };
-        let Some(device) = device else {
-            emit(
-                "error",
-                json!({ "message": "camera is no longer in the scan list" }),
-            );
-            return Ok(false);
-        };
-
-        let dir = dir.clone();
-        let saved = load_saved(&dir);
-        Ok(start_connect(device, dir, saved, false))
+        Ok(start_connect(device, dir.clone(), load_saved(dir), false))
     })
 }
 
@@ -428,6 +549,7 @@ fn start_connect(device: Device, dir: PathBuf, mut saved: SavedState, auto: bool
 
                 let camera = Arc::new(camera);
                 if let Ok(mut state) = STATE.lock() {
+                    state.connecting = false;
                     state.camera = Some(camera.clone());
                 }
                 emit(
@@ -456,6 +578,12 @@ fn start_connect(device: Device, dir: PathBuf, mut saved: SavedState, auto: bool
                 }
             }
             Err(error) => {
+                if EPOCH.load(Ordering::SeqCst) != epoch {
+                    return;
+                }
+                if let Ok(mut state) = STATE.lock() {
+                    state.connecting = false;
+                }
                 emit(
                     "connectFailed",
                     json!({ "message": error_message(&error), "auto": auto }),
@@ -520,7 +648,10 @@ pub extern "system" fn Java_com_cakeal_osmolink_bridge_OsmoNative_nativeDisconne
     run_bool(&mut unowned, |_env| {
         // A later connect must win over any in-flight pairing attempt.
         let _ = EPOCH.fetch_add(1, Ordering::SeqCst);
-        let camera = STATE.lock().ok().and_then(|mut state| state.camera.take());
+        let camera = STATE.lock().ok().and_then(|mut state| {
+            state.connecting = false;
+            state.camera.take()
+        });
         if let Some(camera) = camera {
             camera.stop_gps();
             if let Some(runtime) = RUNTIME.get() {

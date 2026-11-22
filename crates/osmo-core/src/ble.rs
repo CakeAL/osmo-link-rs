@@ -1,11 +1,16 @@
-use std::{collections::VecDeque, pin::Pin, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    pin::Pin,
+    time::Duration,
+};
 
 #[cfg(not(target_os = "android"))]
 use btleplug::api::CentralState;
 use btleplug::{
     api::{
-        Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-        ValueNotification, WriteType,
+        Central, CentralEvent, CharPropFlags, Characteristic, Manager as _, Peripheral as _,
+        PeripheralProperties, ScanFilter, ValueNotification, WriteType,
     },
     platform::{Adapter, Manager, Peripheral},
 };
@@ -69,6 +74,134 @@ impl Scanner {
     }
 
     pub async fn scan(&self, duration: Duration) -> Result<Vec<Device>> {
+        self.start_scan().await?;
+        sleep(duration).await;
+        self.adapter.stop_scan().await?;
+        let mut devices = Vec::new();
+        let peripherals = self.adapter.peripherals().await?;
+        let visible = peripherals.len();
+        for peripheral in peripherals {
+            let Some(properties) = peripheral.properties().await? else {
+                continue;
+            };
+            if properties.manufacturer_data.contains_key(&0x08aa)
+                || properties
+                    .local_name
+                    .as_deref()
+                    .is_some_and(|name| name.contains("Osmo") || name.contains("DJI"))
+            {
+                tracing::debug!(id = %peripheral.id(), name = ?properties.local_name,
+                    manufacturer_data = ?properties.manufacturer_data,
+                    services = ?properties.services, "DJI scan candidate");
+            }
+            if is_camera(&properties.manufacturer_data) {
+                devices.push(device_from_properties(peripheral, properties));
+            }
+        }
+        sort_devices(&mut devices);
+        tracing::debug!(
+            visible,
+            matched = devices.len(),
+            "Bluetooth scan results (backend cache)"
+        );
+        Ok(devices)
+    }
+
+    /// Reports newly seen cameras from the current scan, ordered by RSSI.
+    /// Return `true` from `on_update` or resolve `stop` to end early.
+    /// Await the result before connecting so the platform scan has stopped.
+    pub async fn scan_live(
+        &self,
+        duration: Duration,
+        stop: impl Future<Output = ()>,
+        on_update: impl FnMut(&[Device]) -> bool,
+    ) -> Result<Vec<Device>> {
+        let events = self.adapter.events().await?;
+        self.start_scan().await?;
+        let result = self.collect_live(events, duration, stop, on_update).await;
+        self.adapter.stop_scan().await?;
+        result
+    }
+
+    /// Uses a foreground scan supplied by an Android host. The host feeds its
+    /// ScanResult objects back through `report_android_scan_result`.
+    #[cfg(target_os = "android")]
+    pub async fn scan_android_live(
+        &self,
+        duration: Duration,
+        stop: impl Future<Output = ()>,
+        on_update: impl FnMut(&[Device]) -> bool,
+        mut set_scanning: impl FnMut(bool) -> Result<()>,
+    ) -> Result<Vec<Device>> {
+        let events = self.adapter.events().await?;
+        set_scanning(true)?;
+        let result = self.collect_live(events, duration, stop, on_update).await;
+        set_scanning(false)?;
+        result
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn report_android_scan_result<'local>(
+        &self,
+        env: &mut jni::Env<'local>,
+        result: jni::objects::JObject<'local>,
+    ) -> Result<()> {
+        self.adapter.report_scan_result(env, result)?;
+        Ok(())
+    }
+
+    async fn collect_live(
+        &self,
+        mut events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
+        duration: Duration,
+        stop: impl Future<Output = ()>,
+        mut on_update: impl FnMut(&[Device]) -> bool,
+    ) -> Result<Vec<Device>> {
+        let deadline = sleep(duration);
+        tokio::pin!(deadline, stop);
+        let started = tokio::time::Instant::now();
+        let mut devices = Vec::<Device>::new();
+        loop {
+            let event = tokio::select! {
+                biased;
+                () = &mut stop => break,
+                () = &mut deadline => break,
+                event = events.next() => event.ok_or(Error::Disconnected)?,
+            };
+            let CentralEvent::ManufacturerDataAdvertisement {
+                id,
+                manufacturer_data,
+            } = event
+            else {
+                continue;
+            };
+            if !is_camera(&manufacturer_data) {
+                continue;
+            }
+            let peripheral = self.adapter.peripheral(&id).await?;
+            let Some(properties) = peripheral.properties().await? else {
+                continue;
+            };
+            let device = device_from_properties(peripheral, properties);
+            if let Some(existing) = devices.iter_mut().find(|existing| existing.id == device.id) {
+                *existing = device;
+                continue;
+            }
+            tracing::debug!(
+                elapsed_ms = started.elapsed().as_millis(),
+                "Discovered DJI camera"
+            );
+            devices.push(device);
+            sort_devices(&mut devices);
+            if on_update(&devices) {
+                break;
+            }
+        }
+        sort_devices(&mut devices);
+        Ok(devices)
+    }
+
+    async fn start_scan(&self) -> Result<()> {
         // CoreBluetooth start_scan only queues a request: it can succeed while
         // Bluetooth is off or the app has no permission, then report no devices.
         // Android's btleplug backend always reports Unknown, so a pre-check
@@ -94,52 +227,31 @@ impl Scanner {
         self.adapter
             .start_scan(ScanFilter::default())
             .await
-            .map_err(scan_start_error)?;
-        sleep(duration).await;
-        self.adapter.stop_scan().await?;
-        let mut devices = Vec::new();
-        let peripherals = self.adapter.peripherals().await?;
-        let visible = peripherals.len();
-        for peripheral in peripherals {
-            let Some(properties) = peripheral.properties().await? else {
-                continue;
-            };
-            if properties.manufacturer_data.contains_key(&0x08aa)
-                || properties
-                    .local_name
-                    .as_deref()
-                    .is_some_and(|name| name.contains("Osmo") || name.contains("DJI"))
-            {
-                tracing::debug!(id = %peripheral.id(), name = ?properties.local_name,
-                    manufacturer_data = ?properties.manufacturer_data,
-                    services = ?properties.services, "DJI scan candidate");
-            }
-            // btleplug separates the first two manufacturer bytes into company ID.
-            if properties
-                .manufacturer_data
-                .get(&0x08aa)
-                .is_some_and(|data| data.get(2) == Some(&0xfa))
-            {
-                devices.push(Device {
-                    id: peripheral.id().to_string(),
-                    // Display fallback only; names never decide compatibility.
-                    name: properties
-                        .local_name
-                        .or(properties.advertisement_name)
-                        .unwrap_or_else(|| "Unnamed DJI camera".into()),
-                    rssi: properties.rssi,
-                    peripheral,
-                });
-            }
-        }
-        devices.sort_by_key(|d| std::cmp::Reverse(d.rssi));
-        tracing::debug!(
-            visible,
-            matched = devices.len(),
-            "Bluetooth scan results (backend cache)"
-        );
-        Ok(devices)
+            .map_err(scan_start_error)
     }
+}
+
+fn is_camera(manufacturer_data: &HashMap<u16, Vec<u8>>) -> bool {
+    // btleplug separates the first two manufacturer bytes into company ID.
+    manufacturer_data
+        .get(&0x08aa)
+        .is_some_and(|data| data.get(2) == Some(&0xfa))
+}
+
+fn device_from_properties(peripheral: Peripheral, properties: PeripheralProperties) -> Device {
+    Device {
+        id: peripheral.id().to_string(),
+        name: properties
+            .local_name
+            .or(properties.advertisement_name)
+            .unwrap_or_else(|| "Unnamed DJI camera".into()),
+        rssi: properties.rssi,
+        peripheral,
+    }
+}
+
+fn sort_devices(devices: &mut [Device]) {
+    devices.sort_by_key(|device| std::cmp::Reverse(device.rssi));
 }
 
 /// Android's GATT stack often reports status 128 (GATT_ERROR) for the first

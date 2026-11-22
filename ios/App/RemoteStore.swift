@@ -157,8 +157,8 @@ final class RemoteStore: ObservableObject {
     }
 
     func connect(_ device: CameraDevice) {
-        guard phase == .idle, let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
-        if osmo_ios_connect(UInt32(index)) {
+        guard phase == .idle || phase == .scanning, devices.contains(where: { $0.id == device.id }) else { return }
+        if device.id.withCString({ osmo_ios_connect($0) }) {
             message = nil
             phase = .connecting
         } else {
@@ -218,9 +218,11 @@ final class RemoteStore: ObservableObject {
             return
         }
         switch event {
-        case let .devices(devices):
+        case let .devices(devices, scanning, connecting):
             self.devices = devices
-            phase = .idle
+            if phase == .scanning && !scanning {
+                phase = connecting ? .connecting : .idle
+            }
         case let .pairing(info):
             pairing = info
             // The bridge connects automatically right after a scan finds a

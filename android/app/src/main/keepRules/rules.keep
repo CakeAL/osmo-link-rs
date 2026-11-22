@@ -8,4 +8,5 @@
 -keep interface com.cakeal.osmolink.bridge.BridgeListener { *; }
 -keepclasseswithmembers class * implements com.cakeal.osmolink.bridge.BridgeListener {
     public void onEvent(java.lang.String, java.lang.String);
+    public java.lang.String setBleScanning(boolean);
 }

@@ -45,7 +45,7 @@ import com.cakeal.osmolink.data.UiState
 internal fun ConnectScreen(
     state: UiState,
     onScan: () -> Unit,
-    onConnect: (Int) -> Unit,
+    onConnect: (String) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -108,7 +108,7 @@ private fun DiscoveryHero() {
 }
 
 @Composable
-private fun NearbyDevices(state: UiState, onConnect: (Int) -> Unit) {
+private fun NearbyDevices(state: UiState, onConnect: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -171,8 +171,10 @@ private fun NearbyDevices(state: UiState, onConnect: (Int) -> Unit) {
                     )
                 }
             }
-            else -> state.devices.forEachIndexed { index, device ->
-                DeviceRow(device, onClick = { onConnect(index) })
+        }
+        if (!state.connecting) {
+            state.devices.forEach { device ->
+                DeviceRow(device, onClick = { onConnect(device.id) })
             }
         }
     }

@@ -24,7 +24,7 @@ static CAMERA: Mutex<Option<Weak<Camera>>> = Mutex::new(None);
 
 enum Request {
     Scan { auto_connect: bool },
-    Connect(u32),
+    Connect(String),
     Disconnect,
     Capture { mode: u8, capturing: bool },
     Mode(u8),
@@ -75,9 +75,17 @@ pub extern "C" fn osmo_ios_scan(auto_connect: bool) -> bool {
     send(Request::Scan { auto_connect })
 }
 
+/// # Safety
+/// The device ID must be a readable, NUL-terminated string for this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn osmo_ios_connect(index: u32) -> bool {
-    send(Request::Connect(index))
+pub unsafe extern "C" fn osmo_ios_connect(id: *const c_char) -> bool {
+    if id.is_null() {
+        return false;
+    }
+    let Ok(id) = (unsafe { CStr::from_ptr(id) }).to_str() else {
+        return false;
+    };
+    send(Request::Connect(id.to_owned()))
 }
 
 #[unsafe(no_mangle)]
@@ -210,48 +218,91 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
         match request {
             Request::Scan { auto_connect } => {
                 devices.clear();
+                let controller =
+                    auto_connect
+                        .then(|| Controller::load(&directory))
+                        .and_then(|result| match result {
+                            Ok(controller) => Some(controller),
+                            Err(error) => {
+                                report(callback, "warning", error);
+                                None
+                            }
+                        });
+                let last = controller
+                    .as_ref()
+                    .and_then(|controller| controller.last.as_deref());
+                let mut selected = None;
+                let mut cancelled = false;
                 let result = async {
                     let scanner = match &scanner {
                         Some(scanner) => scanner,
                         None => scanner.insert(Scanner::new().await?),
                     };
-                    scanner.scan(Duration::from_secs(5)).await
+                    let stop = async {
+                        while let Some(request) = requests.recv().await {
+                            match request {
+                                Request::Connect(id) => {
+                                    selected = Some(id);
+                                    break;
+                                }
+                                Request::Disconnect => {
+                                    cancelled = true;
+                                    break;
+                                }
+                                Request::Scan { .. } => {}
+                                Request::Capture { .. } | Request::Mode(_) => {
+                                    report(callback, "commandFailed", Error::Disconnected);
+                                }
+                            }
+                        }
+                    };
+                    scanner
+                        .scan_live(Duration::from_secs(5), stop, |found| {
+                            let connect =
+                                found.iter().any(|device| Some(device.id.as_str()) == last);
+                            if !connect {
+                                publish_devices(callback, found, true, false);
+                            }
+                            connect
+                        })
+                        .await
                 }
                 .await;
                 match result {
                     Ok(found) => {
-                        let list: Vec<_> = found
-                            .iter()
-                            .map(|device| {
-                                json!({ "id": device.id, "name": device.name, "rssi": device.rssi })
-                            })
-                            .collect();
                         devices = found;
-                        emit(callback, "devices", json!({ "devices": list }));
-                        if auto_connect {
-                            reconnect_saved(&directory, &devices, callback, &mut requests).await;
+                        let target = if let Some(id) = &selected {
+                            devices
+                                .iter()
+                                .find(|device| &device.id == id)
+                                .map(|device| (device, false))
+                        } else if cancelled {
+                            None
+                        } else {
+                            controller.as_ref().and_then(|controller| {
+                                preferred_paired(
+                                    devices.iter().map(|device| device.id.as_str()),
+                                    controller,
+                                )
+                                .map(|index| (&devices[index], true))
+                            })
+                        };
+                        publish_devices(callback, &devices, false, target.is_some());
+                        if let Some((device, auto)) = target {
+                            connect_session(&directory, device, callback, &mut requests, auto)
+                                .await;
+                        } else if selected.is_some() {
+                            report_missing_device(callback);
                         }
                     }
                     Err(error) => report_camera(callback, "scanFailed", &error),
                 }
             }
-            Request::Connect(index) => {
-                if let Some(device) = devices.get(index as usize).cloned() {
-                    match connect(&directory, &device, callback, false).await {
-                        Ok(camera) => {
-                            session(Arc::new(camera), callback, &mut requests).await;
-                            if let Ok(mut slot) = CAMERA.lock() {
-                                *slot = None;
-                            }
-                        }
-                        Err(error) => report_connect_failed(callback, false, error.as_ref()),
-                    }
+            Request::Connect(id) => {
+                if let Some(device) = devices.iter().find(|device| device.id == id) {
+                    connect_session(&directory, device, callback, &mut requests, false).await;
                 } else {
-                    emit(
-                        callback,
-                        "connectFailed",
-                        json!({ "message": "请重新搜索相机。", "auto": false }),
-                    );
+                    report_missing_device(callback);
                 }
             }
             Request::Disconnect => emit(callback, "disconnected", json!({})),
@@ -262,37 +313,41 @@ async fn run(directory: PathBuf, callback: Callback, mut requests: mpsc::Receive
     }
 }
 
-/// Connects to a previously paired camera found in the latest scan.
-///
-/// Runs the normal session after a successful connection, so the request loop
-/// stays blocked exactly as it does for a manual selection.
-async fn reconnect_saved(
+fn report_missing_device(callback: Callback) {
+    emit(
+        callback,
+        "connectFailed",
+        json!({ "message": "请重新搜索相机。", "auto": false }),
+    );
+}
+
+fn publish_devices(callback: Callback, devices: &[Device], scanning: bool, connecting: bool) {
+    let list: Vec<_> = devices
+        .iter()
+        .map(|device| json!({ "id": device.id, "name": device.name, "rssi": device.rssi }))
+        .collect();
+    emit(
+        callback,
+        "devices",
+        json!({ "devices": list, "scanning": scanning, "connecting": connecting }),
+    );
+}
+
+async fn connect_session(
     directory: &Path,
-    devices: &[Device],
+    device: &Device,
     callback: Callback,
     requests: &mut mpsc::Receiver<Request>,
+    auto: bool,
 ) {
-    let controller = match Controller::load(directory) {
-        Ok(controller) => controller,
-        Err(error) => {
-            report(callback, "warning", error);
-            return;
-        }
-    };
-    let Some(index) =
-        preferred_paired(devices.iter().map(|device| device.id.as_str()), &controller)
-    else {
-        return;
-    };
-    let device = devices[index].clone();
-    match connect(directory, &device, callback, true).await {
+    match connect(directory, device, callback, auto).await {
         Ok(camera) => {
             session(Arc::new(camera), callback, requests).await;
             if let Ok(mut slot) = CAMERA.lock() {
                 *slot = None;
             }
         }
-        Err(error) => report_connect_failed(callback, true, error.as_ref()),
+        Err(error) => report_connect_failed(callback, auto, error.as_ref()),
     }
 }
 

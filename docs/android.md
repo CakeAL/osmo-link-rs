@@ -6,6 +6,8 @@
 设置可选择暗色或浅色、输入六位 RGB 色值或恢复默认配色。
 发现页和相机状态卡使用当前主题生成渐变与圆形纹样。
 扫描页分别显示首次搜索、扫描、连接和无结果状态。发现的相机显示信号强度，可点整行连接。
+前台搜索使用低延迟 BLE 扫描，收到匹配的广播后立即更新列表。点选相机或发现上次连接过的
+自动连接目标时，先结束扫描再连接。其他已配对相机在扫描时限结束后按信号强度择优连接。
 遥控页在状态卡显示电量、录制时长或拍照模式以及剩余可用时间或张数。拍摄模式、相机详情和定位注入各有独立卡片。
 在当前模式一栏上下滑动可展开滚轮。模式图标和名称随手指滚动，松手时切换到中央高亮的模式。也可点开滚轮后选择。
 等待首个相机状态或重连期间，拍摄按钮和模式选择不可用。拍摄期间不可切换模式。
@@ -23,6 +25,7 @@
 | [crates/android-bridge](../crates/android-bridge) | JNI cdylib（`libosmo_bridge.so`）：扫描、连接、命令、事件、GPS |
 | [android/app](../android/app) | Compose UI、权限、前台服务；状态在 `OsmoRepository`，GPS 在 `GpsTracker` |
 | [OsmoRepository.kt](../android/app/src/main/java/com/cakeal/osmolink/data/OsmoRepository.kt) | 进程级状态、GPS、前台服务启停 |
+| [CameraScan.kt](../android/app/src/main/java/com/cakeal/osmolink/bridge/CameraScan.kt) | 前台低延迟扫描，把 DJI 广播交给 Rust 后端 |
 | [OsmoService.kt](../android/app/src/main/java/com/cakeal/osmolink/service/OsmoService.kt) | 前台服务与常驻通知 |
 | [android/btleplug-jni](../android/btleplug-jni) | 内置的 btleplug 0.13.5 Java 支持类（上游不发布 AAR） |
 | [scripts/build-android.sh](../scripts/build-android.sh) | cargo-ndk 构建脚本，被 Gradle `preBuild` 调用 |
@@ -144,7 +147,7 @@ GPS 只使用系统 `LocationManager`（无 Play Services 依赖），采样率�
 未验证（需要真机 + 相机）：
 
 - 真机扫描、固定码 `2333` 首次配对、录制、模式切换、状态推送的端到端行为；
-- 扫描结束后自动连接已配对相机（模拟器没有 BLE，无法验证真实扫描结果触发的连接）；
+- 实时扫描列表、提前连接上次配对的相机和发现到连通的耗时（模拟器没有 BLE）；
 - 真实相机电量跨过提醒阈值时的震动、通知与阈值设置（模拟器无法产生真实 BLE 状态）；
 - GPS 是否真正写入视频素材（发送完成不等于落盘）；
 - 真机长时间后台、Doze 与厂商省电策略下的存活；

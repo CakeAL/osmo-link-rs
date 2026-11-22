@@ -1,5 +1,7 @@
 package com.cakeal.osmolink.bridge
 
+import android.bluetooth.le.ScanResult
+
 /**
  * JNI surface of `crates/android-bridge`.
  *
@@ -16,7 +18,11 @@ object OsmoNative {
 
     external fun nativeScan(seconds: Int, autoConnect: Boolean): Boolean
 
-    external fun nativeConnect(index: Int): Boolean
+    external fun nativeScanResult(result: ScanResult): Boolean
+
+    external fun nativeScanFailed(code: Int): Boolean
+
+    external fun nativeConnect(id: String): Boolean
 
     external fun nativeDisconnect(): Boolean
 

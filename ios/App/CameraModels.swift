@@ -117,7 +117,7 @@ struct ConnectedCamera: Decodable {
 }
 
 enum BridgeEvent: Decodable {
-    case devices([CameraDevice])
+    case devices([CameraDevice], scanning: Bool, connecting: Bool)
     case pairing(Pairing)
     case connected(ConnectedCamera)
     case status(CameraStatus)
@@ -133,7 +133,7 @@ enum BridgeEvent: Decodable {
     case warning(String)
 
     private enum Keys: String, CodingKey {
-        case kind, payload, devices, details, attempt, message, name, parameters, auto
+        case kind, payload, devices, details, attempt, message, name, parameters, auto, scanning, connecting
     }
 
     init(from decoder: Decoder) throws {
@@ -141,7 +141,12 @@ enum BridgeEvent: Decodable {
         let payload = try event.nestedContainer(keyedBy: Keys.self, forKey: .payload)
         let kind = try event.decode(String.self, forKey: .kind)
         switch kind {
-        case "devices": self = .devices(try payload.decode([CameraDevice].self, forKey: .devices))
+        case "devices":
+            self = .devices(
+                try payload.decode([CameraDevice].self, forKey: .devices),
+                scanning: try payload.decode(Bool.self, forKey: .scanning),
+                connecting: try payload.decode(Bool.self, forKey: .connecting)
+            )
         case "pairing": self = .pairing(try event.decode(Pairing.self, forKey: .payload))
         case "connected": self = .connected(try event.decode(ConnectedCamera.self, forKey: .payload))
         case "status": self = .status(try event.decode(CameraStatus.self, forKey: .payload))

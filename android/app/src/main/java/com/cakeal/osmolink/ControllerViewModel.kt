@@ -14,7 +14,7 @@ class ControllerViewModel : ViewModel() {
 
     fun scan(autoConnect: Boolean) = OsmoRepository.scan(autoConnect)
 
-    fun connect(index: Int) = OsmoRepository.connect(index)
+    fun connect(id: String) = OsmoRepository.connect(id)
 
     fun disconnect() = OsmoRepository.disconnect()
 

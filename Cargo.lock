@@ -616,6 +616,7 @@ dependencies = [
  "btleplug",
  "chrono",
  "futures-util",
+ "jni",
  "serde",
  "thiserror 2.0.21",
  "tokio",

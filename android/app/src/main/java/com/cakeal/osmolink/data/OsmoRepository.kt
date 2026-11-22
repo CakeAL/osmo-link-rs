@@ -7,6 +7,7 @@ import android.location.LocationManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.cakeal.osmolink.bridge.BridgeListener
+import com.cakeal.osmolink.bridge.CameraScan
 import com.cakeal.osmolink.bridge.OsmoNative
 import com.cakeal.osmolink.location.GpsTracker
 import com.cakeal.osmolink.service.BatteryAlertNotifier
@@ -32,6 +33,7 @@ object OsmoRepository : BridgeListener {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private lateinit var context: Context
+    private lateinit var cameraScan: CameraScan
     private var attached = false
     private var serviceRunning = false
     private var gps: GpsTracker? = null
@@ -48,6 +50,7 @@ object OsmoRepository : BridgeListener {
         if (attached) return
         attached = true
         context = application.applicationContext
+        cameraScan = CameraScan(context)
         if (!OsmoNative.nativeInit(context.filesDir.absolutePath, this)) {
             update { it.copy(message = "原生蓝牙初始化失败") }
         }
@@ -62,11 +65,12 @@ object OsmoRepository : BridgeListener {
         }
     }
 
-    fun connect(index: Int) {
+    override fun setBleScanning(enabled: Boolean): String? = cameraScan.setScanning(enabled)
+
+    fun connect(id: String) {
         if (_state.value.connecting || _state.value.connected) return
-        update { it.copy(connecting = true, message = null) }
-        if (!OsmoNative.nativeConnect(index)) {
-            update { it.copy(connecting = false, message = "连接请求失败") }
+        if (!OsmoNative.nativeConnect(id)) {
+            update { if (it.connecting) it else it.copy(message = "连接请求失败") }
         }
     }
 
@@ -245,10 +249,19 @@ object OsmoRepository : BridgeListener {
             JSONObject()
         }
         when (type) {
-            "devices" -> update { it.copy(scanning = false, devices = parseDevices(json)) }
+            "devices" -> update {
+                val connecting = json.optBoolean("connecting")
+                it.copy(
+                    scanning = json.optBoolean("scanning"),
+                    connecting = connecting,
+                    devices = parseDevices(json),
+                    message = if (connecting) null else it.message,
+                )
+            }
             "pairing" -> update {
                 it.copy(
                     connecting = true,
+                    message = null,
                     pairing = PairingInfo(
                         code = json.optInt("code"),
                         device = json.optString("device"),
