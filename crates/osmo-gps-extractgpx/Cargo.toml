@@ -1,5 +1,5 @@
 [package]
-name = "osmo_gps_extract_gpx"
+name = "osmo-gps-extract-gpx"
 version.workspace = true
 edition.workspace = true
 description = "Extract DJI Osmo Action GPS metadata from MP4 files and write GPX"
@@ -12,9 +12,9 @@ thiserror.workspace = true
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 
 [lib]
-name = "osmo_gps_extract_gpx"
+name = "osmo-gps-extract-gpx"
 path = "src/lib.rs"
 
 [[bin]]
-name = "osmo_gps_extract_gpx"
+name = "osmo-gps-extract-gpx"
 path = "src/main.rs"

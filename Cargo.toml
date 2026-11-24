@@ -3,7 +3,7 @@ members = [
     "crates/osmo-core",
     "crates/macos-cli",
     "crates/mobile-bridge",
-    "crates/osmo_gps_extract_gpx",
+    "crates/osmo-gps-extract-gpx",
 ]
 resolver = "3"
 

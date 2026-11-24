@@ -1,4 +1,4 @@
-# osmo_gps_extract_gpx
+# osmo-gps-extract-gpx
 
 从 DJI Osmo Action 4 / 5 / 6 的 MP4 中读取内嵌 GPS，写成 GPX。
 
