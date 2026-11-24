@@ -665,3 +665,6 @@ The first workflow run stopped before building because the v0.1.0 tag
 did not match the v0.1 changelog heading. The heading and release example
 now use v0.1.0. The workflow accepts updates to unpublished tags so a fixed
 commit can trigger a fresh release attempt.
+
+The hosted Android job also needed the SDK catalog's exact package name,
+`platforms;android-37.0`.
