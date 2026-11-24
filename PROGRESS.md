@@ -651,3 +651,10 @@ The Chinese changelog starts at the app's current version, v0.1. Before
 building, the release workflow checks that the pushed tag has one non-empty
 matching section. The publishing job uses the section from the tagged
 commit as the GitHub Release body.
+
+## Docs: focus the README on the mobile apps
+
+The README now shows the Android remote in use and covers downloads, platform
+requirements, sideloading and GPS injection. The developer guide carries the
+CLI and Rust APIs. The iOS and release guides cover builds, Personal Team
+signing limits and the unsigned IPA workflow.

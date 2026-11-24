@@ -81,7 +81,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 暂停；休眠后不自动重连。任何新增命令都必须尊重 `sleeping`/`sleep_requested` 拦截。
 
 **重连：** 意外断开最多 2 次，重连成功后恢复状态订阅，`gps_valid_from` 重置（旧定位作废）；
-相机拒绝配对立即放弃。改动这里要同步 [README.md](README.md) 的重连段落。
+相机拒绝配对立即放弃。改动这里要同步 [开发与调试](docs/development.md#功能) 的重连段落。
 
 ## 协议与硬件规则（易错，先读再改）
 
@@ -132,7 +132,7 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
   的"未验证的范围"。
 - 只把宿主发送日志当作发送节奏证据，不当作空口抓包或"视频已写入 GPS"的证据。
 - 文档改动要同步：行为变化 → README；实现步骤 → PROGRESS.md（英文，按步骤追加，不重写历史）；
-  公开 API 变化 → README 的 `core 接入`/枚举章节。
+  公开 API 变化 → [开发与调试](docs/development.md) 的 `core 接入`/枚举章节。
 - 上游协议来源固定为 DJI Osmo-GPS-Controller-Demo 修订
   `92fe23e5a749f189593f980a26a105c3bb66aa1c`；引用样例字节或测试数据时保持
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 的归属准确。
