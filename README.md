@@ -323,12 +323,13 @@ Base64 只是编码，把剪贴板内容直接粘贴到 Secret 输入框。
 | `ANDROID_KEY_ALIAS` | 上例中的 `osmo-link` |
 | `ANDROID_KEY_PASSWORD` | 该别名下的私钥密码，若生成时采用密钥库密码则填同一值 |
 
-从包含发布工作流的提交打标签并推送。小版本号和补丁号最多为 999，主版本号最多为 2099，
-各段省略前导零。同一版本选用一种标签写法。
+发布前在 [CHANGELOG.md](CHANGELOG.md) 顶部新增与标签一致的二级标题，如 `## v0.1`，
+并写入更新内容。GitHub Release 正文取自该章节。从包含这份更新日志的提交打标签并推送。
+小版本号和补丁号最多为 999，主版本号最多为 2099，各段省略前导零。同一版本选用一种标签写法。
 
 ```sh
-git tag -a v0.2 -m "发布 v0.2"
-git push origin v0.2
+git tag -a v0.1 -m "发布 v0.1"
+git push origin v0.1
 ```
 
 iOS 工作流无需 Apple 签名配置。下载的 IPA 在普通 iPhone 上安装前需要重新签名。

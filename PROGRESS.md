@@ -644,3 +644,10 @@ maps to a monotonic Android version code. Android signs and verifies the
 release APK with a repository-provided key. The iOS job packages the app
 and widget without signing. The release job publishes the two assets after
 both platform jobs succeed.
+
+## Mobile: publish release notes from the changelog
+
+The Chinese changelog starts at the app's current version, v0.1. Before
+building, the release workflow checks that the pushed tag has one non-empty
+matching section. The publishing job uses the section from the tagged
+commit as the GitHub Release body.
