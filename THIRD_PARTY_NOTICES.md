@@ -64,7 +64,7 @@ The source code of esp-idf is available at: https://github.com/espressif/esp-idf
 
 ## DJI `djmd` protobuf field definitions
 
-`crates/osmo_gps_extract_gpx` uses the public DJI timed-metadata field numbering
+`crates/osmo-gps-extract-gpx` uses the public DJI timed-metadata field numbering
 for `dvtm_ac203.proto`, `dvtm_ac204.proto` and `dvtm_ac206.proto`. The field map was
 cross-checked against ExifTool's DJI Protobuf documentation
 (https://exiftool.org/TagNames/DJI.html#Protobuf) and the MIT-licensed

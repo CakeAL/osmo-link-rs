@@ -196,15 +196,15 @@ CLI 保留模式名称和已知数字输入，在调用 core 前转换成枚举�
 
 ## 视频 GPS 提取
 
-[crates/osmo_gps_extract_gpx](../crates/osmo_gps_extract_gpx) 从 Action 4/5/6 的 MP4
+[crates/osmo-gps-extract-gpx](../crates/osmo-gps-extract-gpx) 从 Action 4/5/6 的 MP4
 中读取 `djmd` timed metadata 轨，解码 DJI protobuf 的 GPS 点并写成 GPX。
 它按 `stsd` 的 sample entry `djmd` 选轨，不依赖固定的第 3 条 `trak`。
 
 ```sh
-cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx                    # 每个真实定位一个点
-cargo run -p osmo_gps_extract_gpx -- -r linear -f 2 input.MP4 output.gpx     # 2 Hz 线性插值
-cargo run -p osmo_gps_extract_gpx -- -r discard -f 0.5 input.MP4 output.gpx  # 每 2 秒一个点
-cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx               # 嵌入时间减 8 小时
+cargo run -p osmo-gps-extract-gpx -- input.MP4 output.gpx                    # 每个真实定位一个点
+cargo run -p osmo-gps-extract-gpx -- -r linear -f 2 input.MP4 output.gpx     # 2 Hz 线性插值
+cargo run -p osmo-gps-extract-gpx -- -r discard -f 0.5 input.MP4 output.gpx  # 每 2 秒一个点
+cargo run -p osmo-gps-extract-gpx -- -t 8 input.MP4 output.gpx               # 嵌入时间减 8 小时
 ```
 
 默认每个真实定位输出一个点：App 默认按 10 Hz 下发，但手机 GNSS 约 1 Hz，相机又对
@@ -212,7 +212,7 @@ cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx               # �
 插值，`-r discard` 按时间取最近的定位、不插值。
 `--timezone-offset` 从嵌入的 naive 时间中减去指定小时数，默认 0。
 GPX 由 `gpx` crate 生成，protobuf 由 `prost` 解码；详细说明见
-[crate README](../crates/osmo_gps_extract_gpx/README.md)。
+[crate README](../crates/osmo-gps-extract-gpx/README.md)。
 
 已用 Action 6 的 16 GB 测试文件验证：71,400 个 `djmd` 样本中 66,270 个带定位，
 真实定位约 1 Hz。

@@ -12,7 +12,7 @@ thiserror.workspace = true
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 
 [lib]
-name = "osmo-gps-extract-gpx"
+name = "osmo_gps_extract_gpx"
 path = "src/lib.rs"
 
 [[bin]]

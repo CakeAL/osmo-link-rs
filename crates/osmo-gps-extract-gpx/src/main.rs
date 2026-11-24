@@ -198,10 +198,10 @@ fn text_or_unknown(value: &str) -> &str {
 fn print_help() {
     println!(
         "\
-osmo_gps_extract_gpx - 从 DJI Osmo Action 4/5/6 的 MP4 提取 GPS 并写 GPX
+osmo-gps-extract-gpx - 从 DJI Osmo Action 4/5/6 的 MP4 提取 GPS 并写 GPX
 
 用法:
-  osmo_gps_extract_gpx <input.mp4> [output.gpx] [选项]
+  osmo-gps-extract-gpx <input.mp4> [output.gpx] [选项]
 
 选项:
   -o, --output <path>          输出 GPX 路径（默认与输入同名的 .gpx）

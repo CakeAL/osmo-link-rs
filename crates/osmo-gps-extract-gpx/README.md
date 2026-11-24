@@ -22,16 +22,16 @@ Action 4 / 5 / 6 的 GPS 字段编号一致，区别只是 `proto_name`
 
 ```sh
 # 默认：每个真实定位一个点（手机 GNSS 约 1 Hz，重复样本已合并）
-cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
+cargo run -p osmo-gps-extract-gpx -- input.MP4 output.gpx
 
 # 2 Hz 线性插值：在相邻真实定位之间插值，不会产生重复坐标
-cargo run -p osmo_gps_extract_gpx -- -r linear -f 2 input.MP4 output.gpx
+cargo run -p osmo-gps-extract-gpx -- -r linear -f 2 input.MP4 output.gpx
 
 # 按时间抽样：每 2 秒取最近的一个定位，不插值
-cargo run -p osmo_gps_extract_gpx -- -r discard -f 0.5 input.MP4 output.gpx
+cargo run -p osmo-gps-extract-gpx -- -r discard -f 0.5 input.MP4 output.gpx
 
 # 嵌入时间减 8 小时（默认 0，即原样输出）
-cargo run -p osmo_gps_extract_gpx -- -t 8 input.MP4 output.gpx
+cargo run -p osmo-gps-extract-gpx -- -t 8 input.MP4 output.gpx
 ```
 
 不传 `output.gpx` 时，输出与输入同名的 `.gpx`。

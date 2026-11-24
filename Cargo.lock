@@ -818,7 +818,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "osmo_gps_extract_gpx"
+name = "osmo-gps-extract-gpx"
 version = "0.1.0"
 dependencies = [
  "geo-types",

@@ -11,7 +11,7 @@
   - `osmo-core`（[crates/osmo-core](crates/osmo-core)）：协议、BLE、相机控制、GPS。**无平台专属业务代码。**
   - `macos-cli`（[crates/macos-cli](crates/macos-cli)）：命令行外壳、配对身份持久化、GPS 回放。
   - `mobile-bridge`（[crates/mobile-bridge](crates/mobile-bridge)）：Android 与 iOS 共用的连接会话、配对记录、模式目录及 UniFFI 接口。
-  - `osmo_gps_extract_gpx`（[crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx)）：独立 MP4 → GPX 工具，不在手机上运行。
+  - `osmo-gps-extract-gpx`（[crates/osmo-gps-extract-gpx](crates/osmo-gps-extract-gpx)）：独立 MP4 → GPX 工具，不在手机上运行。
 - `android/`（[android](android)）是独立 Gradle 工程：`:app`（Compose HUD）、
   `:btleplug-jni`（内置的 btleplug Java 支持类）。原生库由 cargo-ndk 构建。
 - `ios/`（[ios](ios)）是 Xcode 工程，包含 SwiftUI App 和 WidgetKit 录制实时活动扩展。
@@ -22,7 +22,7 @@
 cargo run -p macos-cli                 # 交互式 CLI；命令 DATA 默认打印
 cargo run -p macos-cli -- --scan       # 只扫描后退出
 cargo run -p macos-cli -- --connect OsmoAction4-B15B
-cargo run -p osmo_gps_extract_gpx -- input.MP4 output.gpx
+cargo run -p osmo-gps-extract-gpx -- input.MP4 output.gpx
 
 cargo fmt --all                        # 格式化（无 rustfmt.toml，用默认规则）
 cargo test --workspace                 # 40 个单元测试，全部离线
@@ -54,11 +54,11 @@ cd android && ./gradlew :app:assembleDebug -PskipRust=true   # 只改 Kotlin 时
 | [mobile-bridge/src/android.rs](crates/mobile-bridge/src/android.rs) | btleplug 初始化与 Android `ScanResult` JNI 入口 |
 | [android/app](android/app/src/main/java/com/cakeal/osmolink) | Compose UI、`OsmoRepository`、前台服务、权限、`GpsTracker` |
 | [ios/App](ios/App)、[ios/RecordingWidget](ios/RecordingWidget) | SwiftUI 遥控、应用级连接状态、ActivityKit 与灵动岛 |
-| [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) | MP4 `djmd` 轨 GPS 提取 → GPX（`gpx` + `prost`） |
+| [crates/osmo-gps-extract-gpx](crates/osmo-gps-extract-gpx) | MP4 `djmd` 轨 GPS 提取 → GPX（`gpx` + `prost`） |
 | [docs/macos-validation.md](docs/macos-validation.md) | 真机证据与**未**验证范围 |
 | [PROGRESS.md](PROGRESS.md) | 按步骤追加的实现日志（英文） |
 
-任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；视频 GPS → `osmo_gps_extract_gpx`；命令语义与重连 →
+任务 → 改哪里：协议字段 → `protocol.rs`；扫描/连接问题 → `ble.rs`；视频 GPS → `osmo-gps-extract-gpx`；命令语义与重连 →
 `camera.rs`；状态字段含义 → `status.rs` + `enums.rs`；定位编码 → `gps.rs`；CLI 交互 →
 `macos-cli/src/main.rs`；Android 界面 → `android/app`；移动端 Rust 接口 → `mobile-bridge`。
 
