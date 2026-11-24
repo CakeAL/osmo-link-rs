@@ -298,6 +298,41 @@ Android 和 iOS 的设置页均可手动「检查更新」。发现较新的正�
 点击「前往 GitHub」即可打开对应的 Release 页面。两端当前显示为 `v0.1`。
 发布时使用 `vX.Y` 或 `vX.Y.Z` 标签，检查时按数字比较，省略的补丁号按 `0` 处理。
 
+## 发布移动端
+
+推送新版本标签后，[发布工作流](.github/workflows/release.yml) 会分别构建 Android 和 iOS
+的 Release 版本。两端成功后才创建 GitHub Release，并上传签名的 arm64 APK 和未签名的
+arm64 IPA。版本号由标签提供。GitHub 仍会自动附带源码归档。
+
+Android 首次发布前需要创建一把长期使用的发布密钥。如果之前已签名分发过 APK，沿用原来的密钥，
+以便用户覆盖安装。把密钥库和密码保存在仓库外，并备份。
+
+```sh
+keytool -genkeypair -storetype JKS -keystore "$HOME/osmo-link-release.jks" \
+  -alias osmo-link -keyalg RSA -keysize 2048 -validity 10000
+openssl base64 -A -in "$HOME/osmo-link-release.jks" | pbcopy
+```
+
+在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 添加以下 Repository secrets。
+Base64 只是编码，把剪贴板内容直接粘贴到 Secret 输入框。
+
+| Secret | 值 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 密钥库文件的 Base64 内容 |
+| `ANDROID_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 上例中的 `osmo-link` |
+| `ANDROID_KEY_PASSWORD` | 该别名下的私钥密码，若生成时采用密钥库密码则填同一值 |
+
+从包含发布工作流的提交打标签并推送。小版本号和补丁号最多为 999，主版本号最多为 2099，
+各段省略前导零。同一版本选用一种标签写法。
+
+```sh
+git tag -a v0.2 -m "发布 v0.2"
+git push origin v0.2
+```
+
+iOS 工作流无需 Apple 签名配置。下载的 IPA 在普通 iPhone 上安装前需要重新签名。
+
 ## 视频 GPS 提取
 
 [crates/osmo_gps_extract_gpx](crates/osmo_gps_extract_gpx) 从 Action 4/5/6 的 MP4

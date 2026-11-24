@@ -635,3 +635,12 @@ The previous Android bridge, iOS bridge and mobile-status crates were removed.
 The shared crate still reads the existing controller.json file and its
 last-camera selection. Real camera behavior after the migration remains
 unverified.
+
+## Mobile: build and publish app releases from Git tags
+
+GitHub Actions builds the arm64 Android APK and iOS device IPA when a new
+version tag is pushed. The tag sets the app version on both platforms and
+maps to a monotonic Android version code. Android signs and verifies the
+release APK with a repository-provided key. The iOS job packages the app
+and widget without signing. The release job publishes the two assets after
+both platform jobs succeed.

@@ -13,8 +13,8 @@ android {
         applicationId = "com.cakeal.osmolink"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = providers.gradleProperty("osmoReleaseVersionCode").map { it.toInt() }.getOrElse(1)
+        versionName = providers.gradleProperty("osmoReleaseVersion").getOrElse("0.1")
         ndk {
             // JNA also ships ABIs for which this build has no Rust library.
             abiFilters += providers.environmentVariable("ABI").orElse("arm64-v8a").get()
