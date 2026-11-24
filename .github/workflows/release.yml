@@ -18,7 +18,7 @@ env:
 
 jobs:
   version:
-    if: github.event.created
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-24.04
     outputs:
       android_name: ${{ steps.tag.outputs.android_name }}

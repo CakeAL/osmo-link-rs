@@ -658,3 +658,10 @@ The README now shows the Android remote in use and covers downloads, platform
 requirements, sideloading and GPS injection. The developer guide carries the
 CLI and Rust APIs. The iOS and release guides cover builds, Personal Team
 signing limits and the unsigned IPA workflow.
+
+## Release: retry the first mobile release
+
+The first workflow run stopped before building because the v0.1.0 tag
+did not match the v0.1 changelog heading. The heading and release example
+now use v0.1.0. The workflow accepts updates to unpublished tags so a fixed
+commit can trigger a fresh release attempt.
